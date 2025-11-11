@@ -54,7 +54,7 @@ def save_riders_data(riders_df: pd.DataFrame):
     riders_df[riders_df["courierName"] == "JNT"].to_csv(
         NODE_SPLITS_DIR / "node2_fragment.csv", index=False
     )
-    riders_df[~riders_df["courierName"] == "JNT"].to_csv(
+    riders_df[riders_df["courierName"] != "JNT"].to_csv(
         NODE_SPLITS_DIR / "node3_fragment.csv", index=False
     )
 
