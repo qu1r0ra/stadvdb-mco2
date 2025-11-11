@@ -24,8 +24,8 @@ class CourierName(enum.Enum):
 
 class RiderVehicleType(enum.Enum):
     MOTORCYCLE = "Motorcycle"
-    BIKE = "Bike"
-    TRIKE = "Trike"
+    BICYCLE = "Bicycle"
+    TRICYCLE = "Tricycle"
     CAR = "Car"
 
 
