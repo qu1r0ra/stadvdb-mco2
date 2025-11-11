@@ -2,7 +2,7 @@ import os
 
 import pandas as pd
 
-from scripts.config import NODE_SPLITS_DIR
+from scripts.configs import NODE_SPLITS_DIR
 from scripts.db.source import get_source_engine
 
 
