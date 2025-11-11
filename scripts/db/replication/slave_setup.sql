@@ -1,0 +1,8 @@
+-- TODO: Finalize.
+CHANGE MASTER TO
+  MASTER_HOST='node1_ip',
+  MASTER_USER='repl',
+  MASTER_PASSWORD='repl_pass',
+  MASTER_LOG_FILE='mysql-bin.000001',
+  MASTER_LOG_POS=###;
+START SLAVE;
