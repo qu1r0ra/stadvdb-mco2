@@ -1,7 +1,7 @@
 {
   "name": "stadvdb-mco2",
   "version": "1.0.0",
-  "description": "A web application that connects to a distributed database system that supports concurrent multi-user access. Created for STADVDB (Advanced Database Systems).",
+  "description": "A web application that connects to a distributed database system which supports concurrent multi-user access. Created for STADVDB (Advanced Database Systems).",
   "main": "index.js",
   "directories": {
     "doc": "docs"
@@ -17,6 +17,11 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": "20.18.0",
+    "npm": "10.8.2"
+  },
+  "engineStrict": true,
   "bugs": {
     "url": "https://github.com/qu1r0ra/stadvdb-mco2/issues"
   },
