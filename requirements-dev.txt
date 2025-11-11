@@ -1,0 +1,17 @@
+annotated-types==0.7.0
+mypy==1.18.2
+mypy-extensions==1.1.0
+mysql-connector-python==9.5.0
+numpy==2.3.4
+pandas==2.3.3
+pathspec==0.12.1
+pydantic==2.12.4
+pydantic-core==2.41.5
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.1
+pytz==2025.2
+ruff==0.14.4
+six==1.17.0
+typing-extensions==4.15.0
+typing-inspection==0.4.2
+tzdata==2025.2
