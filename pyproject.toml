@@ -5,10 +5,14 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11.11"
 dependencies = [
+    "ipykernel>=7.1.0",
     "mysql-connector-python>=9.5.0",
     "pandas>=2.3.3",
+    "pip>=25.3",
     "pydantic>=2.12.4",
     "python-dotenv>=1.2.1",
+    "sqlalchemy>=2.0.44",
+    "tenacity>=9.1.2",
 ]
 
 [dependency-groups]
