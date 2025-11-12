@@ -52,4 +52,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    print("Running script!")
+    # main()
