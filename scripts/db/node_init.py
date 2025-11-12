@@ -1,3 +1,5 @@
+import os
+
 import pandas as pd
 from sqlalchemy import text
 
@@ -52,5 +54,5 @@ def main():
 
 
 if __name__ == "__main__":
-    print("Running script!")
+    print(f"Running {os.path.basename(__file__)}!")
     # main()
