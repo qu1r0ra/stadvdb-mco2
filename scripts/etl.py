@@ -2,7 +2,7 @@ import os
 
 import pandas as pd
 
-from scripts.configs import NODE_SPLITS_DIR
+from scripts.configs import NODE_NAMES, NODE_SPLITS_DIR
 from scripts.db.source import CourierName, RiderVehicleType, get_source_engine
 
 
@@ -67,12 +67,12 @@ def transform_riders_data(riders_df: pd.DataFrame) -> pd.DataFrame:
 
 def save_riders_data(riders_df: pd.DataFrame):
     os.makedirs(NODE_SPLITS_DIR, exist_ok=True)
-    riders_df.to_csv(NODE_SPLITS_DIR / "node1.csv", index=False)
+    riders_df.to_csv(f"{NODE_SPLITS_DIR / NODE_NAMES[0]}.csv", index=False)
     riders_df[riders_df["courierName"] == CourierName.JNT.value].to_csv(
-        NODE_SPLITS_DIR / "node2.csv", index=False
+        f"{NODE_SPLITS_DIR / NODE_NAMES[1]}.csv", index=False
     )
     riders_df[riders_df["courierName"] != CourierName.JNT.value].to_csv(
-        NODE_SPLITS_DIR / "node3.csv", index=False
+        f"{NODE_SPLITS_DIR / NODE_NAMES[2]}.csv", index=False
     )
 
 
