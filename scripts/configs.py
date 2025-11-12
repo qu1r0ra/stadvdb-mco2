@@ -13,4 +13,8 @@ NODE_SPLITS_DIR = DATA_DIR / "node_splits"
 
 DB_SCRIPTS_DIR = SCRIPTS_DIR / "db"
 
-NODE_SCHEMA_FILE = DB_SCRIPTS_DIR / "node.py"
+# ============================================================
+# Nodes
+# ============================================================
+
+NODE_NAMES = ["node1_central", "node2_jnt", "node3_non_jnt"]
