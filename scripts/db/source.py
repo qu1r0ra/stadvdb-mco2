@@ -13,7 +13,11 @@ from tenacity import (
     wait_exponential,
 )
 
+from scripts.configs import PROJECT_ROOT
+
 _source_engine: Engine | None = None
+
+SOURCE_DB_ENV = PROJECT_ROOT / ".env.source"
 
 
 class CourierName(enum.Enum):
@@ -30,7 +34,7 @@ class RiderVehicleType(enum.Enum):
 
 
 def get_sqlalchemy_url() -> str:
-    load_dotenv(".env", override=True)
+    load_dotenv(SOURCE_DB_ENV, override=True)
 
     host = os.getenv("MYSQL_HOST", "127.0.0.1")
     port = os.getenv("MYSQL_PORT", "3306")
@@ -38,6 +42,7 @@ def get_sqlalchemy_url() -> str:
     password = os.getenv("MYSQL_PASSWORD", "password")
     database = os.getenv("MYSQL_DB", "faker")
 
+    print(f"mysql+mysqlconnector://{user}:{password}@{host}:{port}/{database}")
     return f"mysql+mysqlconnector://{user}:{password}@{host}:{port}/{database}"
 
 
