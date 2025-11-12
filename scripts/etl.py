@@ -67,12 +67,12 @@ def transform_riders_data(riders_df: pd.DataFrame) -> pd.DataFrame:
 
 def save_riders_data(riders_df: pd.DataFrame):
     os.makedirs(NODE_SPLITS_DIR, exist_ok=True)
-    riders_df.to_csv(NODE_SPLITS_DIR / "node1_full.csv", index=False)
-    riders_df[riders_df["courierName"] == CourierName.JNT].to_csv(
-        NODE_SPLITS_DIR / "node2_fragment.csv", index=False
+    riders_df.to_csv(NODE_SPLITS_DIR / "node1.csv", index=False)
+    riders_df[riders_df["courierName"] == CourierName.JNT.value].to_csv(
+        NODE_SPLITS_DIR / "node2.csv", index=False
     )
-    riders_df[riders_df["courierName"] != CourierName.JNT].to_csv(
-        NODE_SPLITS_DIR / "node3_fragment.csv", index=False
+    riders_df[riders_df["courierName"] != CourierName.JNT.value].to_csv(
+        NODE_SPLITS_DIR / "node3.csv", index=False
     )
 
 
