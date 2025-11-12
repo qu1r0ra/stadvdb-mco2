@@ -30,19 +30,21 @@ class RiderVehicleType(enum.Enum):
 
 
 def get_sqlalchemy_url() -> str:
-    load_dotenv()
-    host = os.getenv("MYSQL_HOST")
-    port = os.getenv("MYSQL_PORT")
-    user = os.getenv("MYSQL_USER")
-    password = os.getenv("MYSQL_PASSWORD")
-    database = os.getenv("MYSQL_DB")
+    load_dotenv(".env", override=True)
+
+    host = os.getenv("MYSQL_HOST", "127.0.0.1")
+    port = os.getenv("MYSQL_PORT", "3306")
+    user = os.getenv("MYSQL_USER", "root")
+    password = os.getenv("MYSQL_PASSWORD", "password")
+    database = os.getenv("MYSQL_DB", "faker")
+
     return f"mysql+mysqlconnector://{user}:{password}@{host}:{port}/{database}"
 
 
 def get_source_engine() -> Engine:
     global _source_engine
     if _source_engine is None:
-        _source_engine = create_engine(get_sqlalchemy_url())
+        _source_engine = create_engine(get_sqlalchemy_url(), pool_pre_ping=True)
     return _source_engine
 
 
