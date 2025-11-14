@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+import mysql.connector
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -52,3 +53,42 @@ def test_connection(engine: Engine):
         print("Connection OK.")
     except Exception as e:
         print(f"Connection failed: {e}")
+
+
+def load_env():
+    load_dotenv()
+    env = {
+        "node1": {
+            "host": os.getenv("NODE1_HOST"),
+            "port": os.getenv("NODE1_PORT"),
+            "user": os.getenv("NODE1_USER"),
+            "password": os.getenv("NODE1_PASSWORD"),
+            "db": os.getenv("NODE1_DB"),
+        },
+        "node2": {
+            "host": os.getenv("NODE2_HOST"),
+            "port": os.getenv("NODE2_PORT"),
+            "user": os.getenv("NODE2_USER"),
+            "password": os.getenv("NODE2_PASSWORD"),
+            "db": os.getenv("NODE2_DB"),
+        },
+        "node3": {
+            "host": os.getenv("NODE3_HOST"),
+            "port": os.getenv("NODE3_PORT"),
+            "user": os.getenv("NODE3_USER"),
+            "password": os.getenv("NODE3_PASSWORD"),
+            "db": os.getenv("NODE3_DB"),
+        },
+    }
+    return env
+
+
+def connect_db(host, port, user, password, database):
+    return mysql.connector.connect(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        database=database,
+        autocommit=True,
+    )
