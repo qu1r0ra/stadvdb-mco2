@@ -3,7 +3,6 @@ import { recoverNodes } from "../services/recoveryService";
 
 const router = Router();
 
-// POST trigger recovery process
 router.post("/", async (_req: Request, res: Response) => {
   try {
     const report = await recoverNodes();
@@ -14,13 +13,8 @@ router.post("/", async (_req: Request, res: Response) => {
   }
 });
 
-// Optional: GET recovery status without executing recovery
-router.get("/status", async (_req: Request, res: Response) => {
-  try {
-    res.json({ status: "ready" });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to check recovery status" });
-  }
+router.get("/status", (_req: Request, res: Response) => {
+  res.json({ status: "ready" });
 });
 
 export default router;
