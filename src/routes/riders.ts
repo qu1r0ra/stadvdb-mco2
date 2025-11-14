@@ -1,33 +1,36 @@
 import { Router, Request, Response } from "express";
-import { insertRider, getAllRiders } from "../services/ridersService";
+import { nodes } from "../config/db";
+import { v4 as uuid } from "uuid";
 
 const router = Router();
 
-// GET all riders (fallback: node1 → node2 → node3)
 router.get("/", async (_req: Request, res: Response) => {
-  try {
-    const riders = await getAllRiders();
-    res.json(riders);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to retrieve riders" });
-  }
+  const [rows] = await nodes.node1.pool.query("SELECT * FROM Riders");
+  res.json(rows);
 });
 
-// POST create a new rider
 router.post("/", async (req: Request, res: Response) => {
-  try {
-    const data = req.body;
+  const rider = req.body;
+  rider.tx_id = uuid();
 
-    if (!data.courierName || !data.firstName || !data.lastName) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
+  await nodes.node1.pool.query(`INSERT INTO Riders SET ?`, rider);
+  res.json({ status: "ok", rider });
+});
 
-    const result = await insertRider(data);
-    res.status(201).json(result);
-  } catch (err) {
-    console.error("Insert error:", err);
-    res.status(500).json({ error: "Failed to insert rider" });
-  }
+router.put("/:id", async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const rider = req.body;
+  rider.tx_id = uuid();
+
+  await nodes.node1.pool.query(`UPDATE Riders SET ? WHERE id = ?`, [rider, id]);
+  res.json({ status: "updated", id });
+});
+
+router.delete("/:id", async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+
+  await nodes.node1.pool.query(`DELETE FROM Riders WHERE id = ?`, [id]);
+  res.json({ status: "deleted", id });
 });
 
 export default router;
