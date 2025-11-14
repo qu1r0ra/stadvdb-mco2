@@ -17,8 +17,6 @@ from scripts.configs import PROJECT_ROOT
 
 _source_engine: Engine | None = None
 
-SOURCE_DB_ENV = PROJECT_ROOT / ".env.source"
-
 
 class CourierName(enum.Enum):
     JNT = "JNT"
@@ -33,23 +31,22 @@ class RiderVehicleType(enum.Enum):
     CAR = "Car"
 
 
-def get_sqlalchemy_url() -> str:
-    load_dotenv(SOURCE_DB_ENV, override=True)
+def get_source_sqlalchemy_url() -> str:
+    load_dotenv(PROJECT_ROOT / ".env", override=True)
 
-    host = os.getenv("MYSQL_HOST", "127.0.0.1")
-    port = os.getenv("MYSQL_PORT", "3306")
-    user = os.getenv("MYSQL_USER", "root")
-    password = os.getenv("MYSQL_PASSWORD", "password")
-    database = os.getenv("MYSQL_DB", "faker")
+    host = os.getenv("SOURCE_HOST", "127.0.0.1")
+    port = os.getenv("SOURCE_PORT", "3306")
+    database = os.getenv("SOURCE_DB", "faker")
+    user = os.getenv("SOURCE_USER", "root")
+    password = os.getenv("SOURCE_PASSWORD", "password")
 
-    print(f"mysql+mysqlconnector://{user}:{password}@{host}:{port}/{database}")
     return f"mysql+mysqlconnector://{user}:{password}@{host}:{port}/{database}"
 
 
 def get_source_engine() -> Engine:
     global _source_engine
     if _source_engine is None:
-        _source_engine = create_engine(get_sqlalchemy_url(), pool_pre_ping=True)
+        _source_engine = create_engine(get_source_sqlalchemy_url(), pool_pre_ping=True)
     return _source_engine
 
 
