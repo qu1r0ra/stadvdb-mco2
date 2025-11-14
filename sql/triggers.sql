@@ -1,6 +1,3 @@
--- Change accordingly to node1, node2, node3
-SET @NODE := 'node1';
-
 DELIMITER $$
 
 CREATE TRIGGER riders_after_insert
@@ -10,7 +7,7 @@ BEGIN
   INSERT INTO Logs(tx_id, node_name, action, rider_id, old_value, new_value)
   VALUES (
     UUID(),
-    @NODE,
+    'node1',
     'INSERT',
     NEW.id,
     NULL,
@@ -35,7 +32,7 @@ BEGIN
   INSERT INTO Logs(tx_id, node_name, action, rider_id, old_value, new_value)
   VALUES (
     UUID(),
-    @NODE,
+    'node1',
     'UPDATE',
     NEW.id,
     JSON_OBJECT(
@@ -70,7 +67,7 @@ BEGIN
   INSERT INTO Logs(tx_id, node_name, action, rider_id, old_value, new_value)
   VALUES (
     UUID(),
-    @NODE,
+    'node1',
     'DELETE',
     OLD.id,
     JSON_OBJECT(
