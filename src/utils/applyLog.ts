@@ -1,6 +1,13 @@
 import { Pool } from "mysql2/promise";
 
-export async function applyLogToNode(targetPool: Pool, log: any) {
+type LogRow = {
+    action: "INSERT" | "UPDATE" | "DELETE";
+    old_value?: any;
+    new_value?: any;
+  };
+
+
+export async function applyLogToNode(targetPool: Pool, log: LogRow) {
   const action = log.action;
   const newV = log.new_value ? JSON.parse(log.new_value) : null;
   const oldV = log.old_value ? JSON.parse(log.old_value) : null;
