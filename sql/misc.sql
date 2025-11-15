@@ -25,3 +25,11 @@ WHERE TRIGGER_SCHEMA = DATABASE();
 -- Modify enum values
 ALTER TABLE Riders
 MODIFY COLUMN vehicleType ENUM('Motorcycle', 'Bicycle', 'Tricycle', 'Car') NOT NULL;
+
+-- Create user with all privileges
+CREATE USER 'root'@'%' IDENTIFIED BY 'd5HjGBVAzypL2cKDkmCvqUQh';
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+
+-- Check MySQL users
+SELECT host, user FROM mysql.user;
