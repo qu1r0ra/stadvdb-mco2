@@ -1,7 +1,8 @@
+from pathlib import Path
+
 import pandas as pd
 
 from scripts.db.utils import connect_db
-from pathlib import Path
 
 
 def load_csv_to_node(csv_path: Path, connection):
