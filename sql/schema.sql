@@ -1,8 +1,6 @@
--- create database
 CREATE DATABASE IF NOT EXISTS ridersdb;
 USE ridersdb;
 
--- Riders table
 CREATE TABLE IF NOT EXISTS Riders (
   id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   courierName ENUM('JNT', 'LBCD', 'FEDEZ') NOT NULL,
@@ -15,7 +13,6 @@ CREATE TABLE IF NOT EXISTS Riders (
   updatedAt DATETIME NOT NULL
 );
 
--- Logs table
 CREATE TABLE IF NOT EXISTS Logs (
   id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   tx_id VARCHAR(50) NOT NULL,
