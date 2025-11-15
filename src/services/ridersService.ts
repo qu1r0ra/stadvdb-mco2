@@ -1,4 +1,3 @@
-// src/services/ridersService.ts
 import { nodes } from "../config/db";
 import { v4 as uuidv4 } from "uuid";
 import { PoolConnection, RowDataPacket } from "mysql2/promise";
@@ -108,4 +107,81 @@ export async function getAllRiders(): Promise<RiderRow[]> {
         const [r3] = await nodes.node3.pool.query<RowDataPacket[]>("SELECT * FROM Riders");
         return [...(r2 as RiderRow[]), ...(r3 as RiderRow[])];
     }
+}
+
+/**
+ * Update a rider by ID
+ */
+export async function updateRider(id: number, data: Partial<RiderInput>) {
+  const pool = chooseNodePool(data.courierName ?? ""); // fallback if courierName not provided
+  const txId = uuidv4();
+
+  return await runTransaction(pool, async (conn) => {
+    try {
+      // Fetch old row
+      const [rows]: any = await conn.query("SELECT * FROM Riders WHERE id = ?", [id]);
+      if (rows.length === 0) throw new Error(`Rider ${id} not found`);
+      const oldRow = rows[0];
+
+      // Update
+      const fields: string[] = [];
+      const values: any[] = [];
+      for (const [key, value] of Object.entries(data)) {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      }
+      if (fields.length === 0) return { id, txId }; // nothing to update
+
+      values.push(id);
+      await conn.query(`UPDATE Riders SET ${fields.join(", ")} WHERE id = ?`, values);
+
+      // Fetch new row
+      const [newRows]: any = await conn.query("SELECT * FROM Riders WHERE id = ?", [id]);
+      const newRow = newRows[0];
+
+      // Log the update
+      await conn.query(
+        `INSERT INTO Logs (tx_id, node_name, action, rider_id, old_value, new_value)
+         VALUES (?, ?, 'UPDATE', ?, ?, ?)`,
+        [txId, poolName(pool), id, JSON.stringify(oldRow), JSON.stringify(newRow)]
+      );
+
+      return { id, txId };
+    } catch (err) {
+      console.error(`Update failed on node ${poolName(pool)}:`, err);
+      throw err;
+    }
+  });
+}
+
+/**
+ * Delete a rider by ID
+ */
+export async function deleteRider(id: number, courierName?: string) {
+  const pool = chooseNodePool(courierName ?? "");
+  const txId = uuidv4();
+
+  return await runTransaction(pool, async (conn) => {
+    try {
+      // Fetch old row
+      const [rows]: any = await conn.query("SELECT * FROM Riders WHERE id = ?", [id]);
+      if (rows.length === 0) throw new Error(`Rider ${id} not found`);
+      const oldRow = rows[0];
+
+      // Delete
+      await conn.query("DELETE FROM Riders WHERE id = ?", [id]);
+
+      // Log the delete
+      await conn.query(
+        `INSERT INTO Logs (tx_id, node_name, action, rider_id, old_value, new_value)
+         VALUES (?, ?, 'DELETE', ?, ?, NULL)`,
+        [txId, poolName(pool), id, JSON.stringify(oldRow)]
+      );
+
+      return { id, txId };
+    } catch (err) {
+      console.error(`Delete failed on node ${poolName(pool)}:`, err);
+      throw err;
+    }
+  });
 }
