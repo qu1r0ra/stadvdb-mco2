@@ -35,24 +35,37 @@ function poolName(pool: typeof nodes.node1.pool) {
   return "node3";
 }
 
-// Small helper to run a transaction
+// Small helper to run a transaction with explicit isolation level
 async function runTransaction<T>(
   pool: typeof nodes.node1.pool,
   cb: (conn: PoolConnection) => Promise<T>
 ): Promise<T> {
   const conn = await pool.getConnection();
   try {
+    // Ensure correct isolation level for THIS transaction
+    await conn.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+
+    // Start the transaction
     await conn.beginTransaction();
+
+    // Execute caller logic
     const result = await cb(conn);
+
+    // Commit
     await conn.commit();
     return result;
+
   } catch (err) {
-    try { await conn.rollback(); } catch (_) {}
+    try {
+      await conn.rollback();
+    } catch (_) {}
+
     throw err;
   } finally {
     conn.release();
   }
 }
+
 
 /**
  * Insert a rider into the appropriate node and log the action
