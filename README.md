@@ -17,6 +17,7 @@ A web application that connects to a distributed database system which supports 
   - [2.1. Prerequisites](#21-prerequisites)
   - [2.2. Building](#22-building)
   - [2.3. Running](#23-running)
+- [Commands](#commands)
 
 ## 1. Overview
 
@@ -35,3 +36,48 @@ A web application that connects to a distributed database system which supports 
 ### 2.3. Running
 
 > [fill up]
+
+## Commands
+
+) Log in to MySQL locally (VM)
+
+```bash
+mysql -u root -p
+```
+
+) Create schema (VM) - refer to `schema.sql`
+
+) Test local insertion (VM)
+
+```bash
+INSERT INTO Riders (courierName, vehicleType, firstName, lastName, gender, age, createdAt, updatedAt)
+VALUES ('JNT','Motorcycle','Test','Rider','M',25,NOW(),NOW());
+
+SELECT * FROM Riders;
+```
+
+) Test external connection (backend)
+
+```bash
+mysql -u root -p -h ccscloud.dlsu.edu.ph -P <external port for that node>
+```
+
+Password: (same as provided)
+
+Ports
+
+- Server0 → 60811
+- Server1 → 60812
+- Server2 → 60813
+
+) Open MySQL config file
+
+```bash
+sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
+```
+
+) Restart SQL server
+
+```bash
+sudo systemctl restart mysql
+```
