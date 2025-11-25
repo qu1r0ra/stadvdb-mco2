@@ -1,13 +1,14 @@
 DELIMITER $$
 
+-- AFTER INSERT
 CREATE TRIGGER riders_after_insert
 AFTER INSERT ON Riders
 FOR EACH ROW
 BEGIN
-  INSERT INTO Logs(tx_id, node_name, action, rider_id, old_value, new_value)
+  INSERT INTO Logs(tx_id, node_name, action, rider_id, old_value, new_value, status)
   VALUES (
     UUID(),
-    'node1',
+    'node1',-- Set to corresponding node name
     'INSERT',
     NEW.id,
     NULL,
@@ -21,18 +22,20 @@ BEGIN
       'age', NEW.age,
       'createdAt', NEW.createdAt,
       'updatedAt', NEW.updatedAt
-    )
+    ),
+    'pending'
   );
 END$$
 
+-- AFTER UPDATE
 CREATE TRIGGER riders_after_update
 AFTER UPDATE ON Riders
 FOR EACH ROW
 BEGIN
-  INSERT INTO Logs(tx_id, node_name, action, rider_id, old_value, new_value)
+  INSERT INTO Logs(tx_id, node_name, action, rider_id, old_value, new_value, status)
   VALUES (
     UUID(),
-    'node1',
+    'node1', -- Set to corresponding node name
     'UPDATE',
     NEW.id,
     JSON_OBJECT(
@@ -56,18 +59,20 @@ BEGIN
       'age', NEW.age,
       'createdAt', NEW.createdAt,
       'updatedAt', NEW.updatedAt
-    )
+    ),
+    'pending'
   );
 END$$
 
+-- AFTER DELETE
 CREATE TRIGGER riders_after_delete
 AFTER DELETE ON Riders
 FOR EACH ROW
 BEGIN
-  INSERT INTO Logs(tx_id, node_name, action, rider_id, old_value, new_value)
+  INSERT INTO Logs(tx_id, node_name, action, rider_id, old_value, new_value, status)
   VALUES (
     UUID(),
-    'node1',
+    'node1', -- Set to corresponding node name
     'DELETE',
     OLD.id,
     JSON_OBJECT(
@@ -81,7 +86,8 @@ BEGIN
       'createdAt', OLD.createdAt,
       'updatedAt', OLD.updatedAt
     ),
-    NULL
+    NULL,
+    'pending'
   );
 END$$
 

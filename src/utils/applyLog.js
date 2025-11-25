@@ -1,13 +1,4 @@
-import { Pool } from "mysql2/promise";
-
-type LogRow = {
-    action: "INSERT" | "UPDATE" | "DELETE";
-    old_value?: any;
-    new_value?: any;
-  };
-
-
-export async function applyLogToNode(targetPool: Pool, log: LogRow) {
+export async function applyLogToNode(targetPool, log) {
   const action = log.action;
   const newV = log.new_value ? JSON.parse(log.new_value) : null;
   const oldV = log.old_value ? JSON.parse(log.old_value) : null;
@@ -18,7 +9,10 @@ export async function applyLogToNode(targetPool: Pool, log: LogRow) {
       break;
 
     case "UPDATE":
-      await targetPool.query(`UPDATE Riders SET ? WHERE id = ?`, [newV, newV.id]);
+      await targetPool.query(`UPDATE Riders SET ? WHERE id = ?`, [
+        newV,
+        newV.id,
+      ]);
       break;
 
     case "DELETE":
