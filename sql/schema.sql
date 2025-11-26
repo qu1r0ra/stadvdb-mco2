@@ -2,7 +2,7 @@
 CREATE DATABASE IF NOT EXISTS ridersdb;
 USE ridersdb;
 
--- Riders table (same schema for all nodes)
+-- Riders table (identical schema for all nodes)
 CREATE TABLE IF NOT EXISTS Riders (
   id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   courierName ENUM('JNT', 'LBCD', 'FEDEZ') NOT NULL,
@@ -24,8 +24,20 @@ CREATE TABLE IF NOT EXISTS Logs (
   rider_id INT NOT NULL,
   old_value JSON DEFAULT NULL,
   new_value JSON DEFAULT NULL,
-  status ENUM('pending','replicated') DEFAULT 'pending',
+  status ENUM('pending','replicated', 'failed') DEFAULT 'pending',
   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ReplicationErrors table (identical schema for all nodes)
+CREATE TABLE IF NOT EXISTS ReplicationErrors (
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  log_id INT NOT NULL,
+  source_node ENUM('node1','node2','node3') NOT NULL,
+  target_node ENUM('node1','node2','node3') NOT NULL,
+  attempts INT NOT NULL,
+  last_error TEXT,
+  last_error_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- Optional indexes for faster replication queries

@@ -6,78 +6,102 @@
 
 ![Year, Term, Course](https://img.shields.io/badge/AY2526--T1-STADVDB-blue)
 
-![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff) ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=fff) ![MySQL](https://img.shields.io/badge/MySQL-4479A1?logo=mysql&logoColor=fff)
+![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff) ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?logo=javascript&logoColor=000) ![MySQL](https://img.shields.io/badge/MySQL-4479A1?logo=mysql&logoColor=fff)
 
 A web application that connects to a distributed database system which supports concurrent multi-user access. Created for STADVDB (Advanced Database Systems).
 
-## Table of Contents <!-- omit from toc -->
+---
 
-- [1. Overview](#1-overview)
-- [2. Getting Started](#2-getting-started)
-  - [2.1. Prerequisites](#21-prerequisites)
-  - [2.2. Building](#22-building)
-  - [2.3. Running](#23-running)
-- [Commands](#commands)
+## Overview
 
-## 1. Overview
+This project implements a **distributed database system** with:
 
-> [fill up]
+- Fragmented storage
+- Concurrency-safe writes
+- Bidirectional replication
+- Automatic recovery
+- Application-level write-ahead logging
 
-## 2. Getting Started
+Backend uses **Node.js** and **Express**.
+Data is distributed across three remote VM nodes.
 
-### 2.1. Prerequisites
+---
 
-> [fill up]
+## Features
 
-### 2.2. Building
+- Write-ahead logs on all write operations
+- Fragment-aware routing
+- Deadlock-tolerant transactions
+- Batch replication (100 logs)
+- Full recovery with consistent catch-up
+- Node1 read prioritization with fallback
+- Admin utilities for failed logs
 
-> [fill up]
+---
 
-### 2.3. Running
+## Architecture
 
-> [fill up]
+See `ARCHITECTURE.md`.
 
-## Commands
+Main components:
 
-) Log in to MySQL locally (VM)
+- `/services` — CRUD and replication logic
+- `/routes` — Express API endpoints
+- `/utils` — transaction manager, logging, sleep helper
+- `/scripts/db` — dataset loader
 
-```bash
-mysql -u root -p
-```
+---
 
-) Create schema (VM) - refer to `schema.sql`
+## Installation
 
-) Test local insertion (VM)
+1. Clone the repository
 
-```bash
-INSERT INTO Riders (courierName, vehicleType, firstName, lastName, gender, age, createdAt, updatedAt)
-VALUES ('JNT','Motorcycle','Test','Rider','M',25,NOW(),NOW());
+   ```bash
+   git clone https://github.com/qu1r0ra/stadvdb-mco2.git
+   cd stadvdb-mco2
+   ```
 
-SELECT * FROM Riders;
-```
+2. Install dependencies
 
-) Test external connection (backend)
+   ```bash
+   npm install
+   ```
 
-```bash
-mysql -u root -p -h ccscloud.dlsu.edu.ph -P <external port for that node>
-```
+3. Configure environment
 
-Password: (same as provided)
+   Duplicate `.env.example` and rename it to `.env`
 
-Ports
+   ```bash
+   cp .env.example .env
+   ```
 
-- Server0 → 60811
-- Server1 → 60812
-- Server2 → 60813
+   Replace fields with `(replace)`
 
-) Open MySQL config file
+---
 
-```bash
-sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
-```
+## API Endpoints
 
-) Restart SQL server
+### Riders
 
-```bash
-sudo systemctl restart mysql
-```
+| Method | Route           | Description        |
+| ------ | --------------- | ------------------ |
+| GET    | /api/riders     | Fetch all riders   |
+| POST   | /api/riders     | Insert a new rider |
+| PUT    | /api/riders/:id | Update a rider     |
+| DELETE | /api/riders/:id | Delete a rider     |
+
+### Recovery
+
+| Method | Route                | Description         |
+| ------ | -------------------- | ------------------- |
+| POST   | /api/recovery        | Full recovery       |
+| GET    | /api/recovery/status | Check system health |
+
+### Replication Admin
+
+| Method | Route                          | Description       |
+| ------ | ------------------------------ | ----------------- |
+| GET    | /api/replication/pending/:node | List pending logs |
+| GET    | /api/replication/failed/:node  | List failed logs  |
+| POST   | /api/replication/retry-failed  | Retry failures    |
+| POST   | /api/replication/replicate     | Force sync pair   |
