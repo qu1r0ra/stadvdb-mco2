@@ -39,3 +39,7 @@ FLUSH PRIVILEGES;
 
 -- Check MySQL users
 SELECT host, user FROM mysql.user;
+
+-- Modify column
+ALTER TABLE Logs
+  MODIFY COLUMN status ENUM('pending','replicated','failed') DEFAULT 'pending';
