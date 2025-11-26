@@ -1,10 +1,9 @@
-// services/ridersService.js
 import { nodes } from "../config/db.js";
 import { v4 as uuid } from "uuid";
 import { runTransaction } from "../utils/transactions.js";
 import { info, warn, error } from "../utils/logger.js";
 
-// Choose correct node pool for inserts
+// Choose correct node pool for inserts (partition by courier)
 function chooseNodePool(courier) {
   return courier === "JNT" ? nodes.node2.pool : nodes.node3.pool;
 }
@@ -88,7 +87,7 @@ export async function updateRider(id, data) {
       fields.push(`${key} = ?`);
       values.push(value);
     }
-    if (fields.length === 0) return { id, txId };
+    if (fields.length === 0) return { id, txId }; // nothing to update
 
     values.push(id);
     await conn.query(

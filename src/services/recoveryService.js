@@ -4,28 +4,24 @@ import sleep from "../utils/sleep.js";
 import { info, warn, error } from "../utils/logger.js";
 
 const BATCH_SIZE = 100;
-const APPLY_ATTEMPTS = 3; // total attempts per log
-const BACKOFF_BASE_MS = 100; // 100ms base (100, 300, 900)
+const APPLY_ATTEMPTS = 3; // number of attempts to apply a single log
+const BACKOFF_BASE_MS = 100; // backoff base for retries (100ms -> 300ms -> 900ms style)
 
-// Notes for admin routes:
-// Use /api/replication/replicate to run full recovery.
-// Use /api/replication/replicate with body { "source": "node2", "target": "node1" } for pair sync.
-// Use /api/replication/retry-failed to attempt retries.
-
-async function getMaxLogId(pool) {
-  const [[row]] = await pool.query(`SELECT MAX(id) AS maxId FROM Logs`);
-  return row && row.maxId ? row.maxId : 0;
-}
-
-async function getLogsBatchSince(pool, sinceId, limit = BATCH_SIZE) {
-  // Only pending logs; we don't want to reapply replicated/failed entries
-  const [rows] = await pool.query(
-    `SELECT * FROM Logs WHERE id > ? AND status = 'pending' ORDER BY id ASC LIMIT ?`,
-    [sinceId, limit]
+/**
+ * Fetch a page of pending logs from `source.pool`.
+ * Only returns logs with status = 'pending', ordered ASC by id.
+ */
+async function getPendingLogsFromSource(source, limit = BATCH_SIZE) {
+  const [rows] = await source.pool.query(
+    `SELECT * FROM Logs WHERE status = 'pending' ORDER BY id ASC LIMIT ?`,
+    [limit]
   );
   return rows;
 }
 
+/**
+ * write replication diagnostic into ReplicationErrors table (best-effort)
+ */
 async function recordReplicationError(
   source,
   target,
@@ -35,16 +31,21 @@ async function recordReplicationError(
 ) {
   try {
     await source.pool.query(
-      `INSERT INTO ReplicationErrors (log_id, source_node, target_node, attempts, last_error)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO ReplicationErrors (log_id, source_node, target_node, attempts, last_error, last_error_time)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON DUPLICATE KEY UPDATE attempts = GREATEST(attempts, VALUES(attempts)), last_error = VALUES(last_error), last_error_time = CURRENT_TIMESTAMP`,
       [logId, source.name, target.name, attempts, String(lastError)]
     );
   } catch (err) {
-    // best effort
-    console.error("Failed to insert into ReplicationErrors:", err);
+    // best-effort only
+    console.error("recordReplicationError failed:", err);
   }
 }
 
+/**
+ * applyWithRetries: try applying a single log to target.pool with retries & backoff.
+ * On final failure it marks the source log as 'failed' and records an error row.
+ */
 async function applyWithRetries(source, target, log) {
   let attempts = 0;
   let lastErr = null;
@@ -55,119 +56,120 @@ async function applyWithRetries(source, target, log) {
     if (res.ok) return { ok: true, attempts };
 
     lastErr = res.error;
-    const backoff = BACKOFF_BASE_MS * Math.pow(3, attempts - 1); // 100,300,900
+    const backoff = BACKOFF_BASE_MS * Math.pow(3, attempts - 1); // 100, 300, 900...
     await sleep(backoff);
   }
 
-  // all attempts failed -> record and mark failed
-  await recordReplicationError(source, target, log.id, attempts, lastErr);
-
+  // all attempts failed: mark failed and record diagnostic
   try {
     await source.pool.query(`UPDATE Logs SET status = 'failed' WHERE id = ?`, [
       log.id,
     ]);
   } catch (err) {
-    console.error("Failed to mark log as failed:", err);
+    console.error("Failed to mark log.failed on source:", err);
   }
+
+  await recordReplicationError(source, target, log.id, attempts, lastErr);
 
   return { ok: false, attempts, error: lastErr };
 }
 
 /**
- * syncPairNodes: replicate pending logs between two nodes (A <-> B),
- * processing A->B first in batches, then B->A.
+ * syncFromTo: pull-based single direction replication:
+ * - sourceName: who owns the logs
+ * - targetName: where to apply them
  *
- * Returns an object describing counts and a halted indicator if a failure occurred.
+ * Process pending logs in batches; mark replicated on source when successfully applied.
+ * Returns { appliedCount, halted, reason }.
  */
-async function syncPairNodes(aName, bName) {
-  const a = nodes[aName];
-  const b = nodes[bName];
-  if (!a || !b) throw new Error("Invalid node names for syncPairNodes");
+async function syncFromTo(sourceName, targetName) {
+  const source = nodes[sourceName];
+  const target = nodes[targetName];
+  if (!source || !target) throw new Error("invalid node names for syncFromTo");
 
-  let syncedAtoB = 0;
-  let syncedBtoA = 0;
+  let appliedCount = 0;
 
-  // A -> B
-  let maxB = await getMaxLogId(b.pool);
   while (true) {
-    const batch = await getLogsBatchSince(a.pool, maxB, BATCH_SIZE);
+    const batch = await getPendingLogsFromSource(source, BATCH_SIZE);
     if (!batch || batch.length === 0) break;
 
     for (const log of batch) {
-      const res = await applyWithRetries(a, b, log);
+      const res = await applyWithRetries(source, target, log);
       if (res.ok) {
-        // mark replicated on source node (a)
+        // mark replicated on the source node
         try {
-          await a.pool.query(
+          await source.pool.query(
             `UPDATE Logs SET status = 'replicated' WHERE id = ?`,
             [log.id]
           );
         } catch (err) {
-          console.error("Failed to mark log replicated:", err);
-        }
-        syncedAtoB++;
-        if (log.id > maxB) maxB = log.id;
-      } else {
-        error(
-          `Failed to apply log ${log.id} from ${a.name} -> ${b.name}`,
-          res.error
-        );
-        return {
-          syncedAtoB,
-          syncedBtoA,
-          halted: true,
-          failedLogId: log.id,
-          direction: `${aName}->${bName}`,
-        };
-      }
-    }
-  }
-
-  // B -> A
-  let maxA = await getMaxLogId(a.pool);
-  while (true) {
-    const batch = await getLogsBatchSince(b.pool, maxA, BATCH_SIZE);
-    if (!batch || batch.length === 0) break;
-
-    for (const log of batch) {
-      const res = await applyWithRetries(b, a, log);
-      if (res.ok) {
-        try {
-          await b.pool.query(
-            `UPDATE Logs SET status = 'replicated' WHERE id = ?`,
-            [log.id]
+          // best-effort; log and continue
+          console.error(
+            "Failed to update Logs.status to replicated on source:",
+            err
           );
-        } catch (err) {
-          console.error("Failed to mark log replicated:", err);
         }
-        syncedBtoA++;
-        if (log.id > maxA) maxA = log.id;
+        appliedCount++;
       } else {
         error(
-          `Failed to apply log ${log.id} from ${b.name} -> ${a.name}`,
+          `Replication halted: failed to apply log ${log.id} from ${source.name} -> ${target.name}`,
           res.error
         );
         return {
-          syncedAtoB,
-          syncedBtoA,
+          appliedCount,
           halted: true,
           failedLogId: log.id,
-          direction: `${bName}->${aName}`,
+          direction: `${sourceName}->${targetName}`,
+          error: String(res.error),
         };
       }
     }
+
+    // if batch was full, loop to fetch next batch; otherwise we're done
+    if (batch.length < BATCH_SIZE) break;
   }
 
-  return { syncedAtoB, syncedBtoA, halted: false };
+  return { appliedCount, halted: false };
 }
 
 /**
- * recoverNodes: highest-level: run pairwise syncs
- * We sync node1 <-> node2 and node1 <-> node3.
+ * syncPair: convenience to run both directions between two nodes.
+ * We still use the pull-style internal function above: we call source->target and then the reverse.
+ */
+export async function syncPair(aName, bName) {
+  const aToB = await syncFromTo(aName, bName);
+  if (aToB.halted)
+    return {
+      syncedAtoB: aToB.appliedCount,
+      syncedBtoA: 0,
+      halted: true,
+      reason: aToB,
+    };
+
+  const bToA = await syncFromTo(bName, aName);
+  if (bToA.halted)
+    return {
+      syncedAtoB: aToB.appliedCount,
+      syncedBtoA: bToA.appliedCount,
+      halted: true,
+      reason: bToA,
+    };
+
+  return {
+    syncedAtoB: aToB.appliedCount,
+    syncedBtoA: bToA.appliedCount,
+    halted: false,
+  };
+}
+
+/**
+ * recoverNodes: top-level sync for the cluster.
+ * We run pairwise syncs for node1<->node2 and node1<->node3.
+ * This effectively pulls logs so each node converges.
  */
 export async function recoverNodes() {
-  const r12 = await syncPairNodes("node1", "node2");
-  const r13 = await syncPairNodes("node1", "node3");
+  const r12 = await syncPair("node1", "node2");
+  const r13 = await syncPair("node1", "node3");
 
   return {
     node1_node2: r12,
@@ -177,39 +179,42 @@ export async function recoverNodes() {
 }
 
 /**
- * retryFailedLogs: admin utility - retry logs in 'failed' state from source->target
+ * retryFailedLogs(sourceName, targetName)
+ * - Admin endpoint: retry logs previously marked 'failed' on the source node.
+ * - Will attempt to apply them to the target in ascending id order.
  */
 export async function retryFailedLogs(sourceName, targetName) {
   const source = nodes[sourceName];
   const target = nodes[targetName];
   if (!source || !target) throw new Error("invalid node names");
 
-  // Fetch failed logs in ascending order to preserve ordering
   const [failedRows] = await source.pool.query(
-    `SELECT * FROM Logs WHERE status = 'failed' ORDER BY id ASC`
+    `SELECT * FROM Logs WHERE status = 'failed' ORDER BY id ASC LIMIT 1000`
   );
 
   let retried = 0;
   for (const log of failedRows) {
     const res = await applyWithRetries(source, target, log);
     if (res.ok) {
-      await source.pool.query(
-        `UPDATE Logs SET status = 'replicated' WHERE id = ?`,
-        [log.id]
-      );
-      retried++;
-    } else {
-      // update ReplicationErrors with latest info (best-effort)
+      // mark replicated
       try {
         await source.pool.query(
-          `INSERT INTO ReplicationErrors (log_id, source_node, target_node, attempts, last_error)
-           VALUES (?, ?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE attempts = GREATEST(attempts, VALUES(attempts)), last_error = VALUES(last_error), last_error_time = CURRENT_TIMESTAMP`,
-          [log.id, source.name, target.name, res.attempts, String(res.error)]
+          `UPDATE Logs SET status = 'replicated' WHERE id = ?`,
+          [log.id]
         );
       } catch (err) {
-        console.error("Failed to update ReplicationErrors on retry:", err);
+        console.error("Failed to mark log replicated after retry:", err);
       }
+      retried++;
+    } else {
+      // record latest diagnostics (best-effort)
+      await recordReplicationError(
+        source,
+        target,
+        log.id,
+        res.attempts,
+        res.error
+      );
     }
   }
 
@@ -218,11 +223,4 @@ export async function retryFailedLogs(sourceName, targetName) {
     checked: failedRows.length,
     timestamp: new Date().toISOString(),
   };
-}
-
-/**
- * Expose sync for a specific pair via name if needed by the route
- */
-export async function syncPair(aName, bName) {
-  return await syncPairNodes(aName, bName);
 }

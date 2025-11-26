@@ -1,10 +1,18 @@
 import sleep from "./sleep.js";
 
+/**
+ * runTransaction
+ * - pool: mysql2/promise pool
+ * - cb: async callback receiving a connection (conn) to run queries
+ * - maxAttempts: deadlock retry attempts (default 3 total attempts)
+ */
 export async function runTransaction(pool, cb, maxAttempts = 3) {
   let attempt = 0;
+
   while (true) {
     const conn = await pool.getConnection();
     try {
+      // Ensure the required isolation level for the transaction
       await conn.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
       await conn.beginTransaction();
 
@@ -22,10 +30,13 @@ export async function runTransaction(pool, cb, maxAttempts = 3) {
       attempt++;
       const isDeadlock = err && (err.errno === 1213 || err.errno === 1205);
       if (isDeadlock && attempt < maxAttempts) {
-        const backoff = 100 * Math.pow(2, attempt - 1); // 100ms, 200ms
+        // exponential-ish backoff: 100ms, 200ms, 400ms...
+        const backoff = 100 * Math.pow(2, attempt - 1);
         await sleep(backoff);
-        continue; // retry whole transaction
+        continue;
       }
+
+      // rethrow for non-deadlock or exhausted attempts
       throw err;
     }
   }
