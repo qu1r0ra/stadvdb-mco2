@@ -1,4 +1,5 @@
 import { nodes } from "../config/db.js";
+import { v4 as uuid } from "uuid";
 
 // Choose correct node pool for inserts
 function chooseNodePool(courier) {
@@ -23,9 +24,10 @@ async function runTransaction(pool, cb) {
 
     await conn.commit();
     return result;
-
   } catch (err) {
-    try { await conn.rollback(); } catch (_) {}
+    try {
+      await conn.rollback();
+    } catch (_) {}
     throw err;
   } finally {
     conn.release();
@@ -35,6 +37,7 @@ async function runTransaction(pool, cb) {
 // Insert rider
 export async function insertRider(data) {
   const pool = chooseNodePool(data.courierName);
+  const txId = uuid();
 
   return await runTransaction(pool, async (conn) => {
     const insertSql = `
@@ -48,21 +51,23 @@ export async function insertRider(data) {
       data.firstName,
       data.lastName,
       data.gender ?? null,
-      data.age ?? null
+      data.age ?? null,
     ]);
 
     const insertedId = res.insertId;
-    const [rows] = await conn.query("SELECT * FROM Riders WHERE id = ?", [insertedId]);
+    const [rows] = await conn.query("SELECT * FROM Riders WHERE id = ?", [
+      insertedId,
+    ]);
     const newRow = rows[0];
 
     // Log the insert
     await conn.query(
-      `INSERT INTO Logs (node_name, action, rider_id, old_value, new_value)
-       VALUES (?, 'INSERT', ?, NULL, ?)`,
-      [poolName(pool), insertedId, JSON.stringify(newRow)]
+      `INSERT INTO Logs (tx_id, node_name, action, rider_id, old_value, new_value, status)
+       VALUES (?, ?, 'INSERT', ?, NULL, ?, 'pending')`,
+      [txId, poolName(pool), insertedId, JSON.stringify(newRow)]
     );
 
-    return { id: insertedId };
+    return { id: insertedId, txId };
   });
 }
 
@@ -81,6 +86,7 @@ export async function getAllRiders() {
 // Update rider
 export async function updateRider(id, data) {
   const pool = chooseNodePool(data.courierName || "");
+  const txId = uuid();
 
   return await runTransaction(pool, async (conn) => {
     const [rows] = await conn.query("SELECT * FROM Riders WHERE id = ?", [id]);
@@ -93,28 +99,34 @@ export async function updateRider(id, data) {
       fields.push(`${key} = ?`);
       values.push(value);
     }
-    if (fields.length === 0) return { id }; // nothing to update
+    if (fields.length === 0) return { id, txId }; // nothing to update
 
     values.push(id);
-    await conn.query(`UPDATE Riders SET ${fields.join(", ")} WHERE id = ?`, values);
+    await conn.query(
+      `UPDATE Riders SET ${fields.join(", ")} WHERE id = ?`,
+      values
+    );
 
-    const [newRows] = await conn.query("SELECT * FROM Riders WHERE id = ?", [id]);
+    const [newRows] = await conn.query("SELECT * FROM Riders WHERE id = ?", [
+      id,
+    ]);
     const newRow = newRows[0];
 
     // Log the update
     await conn.query(
-      `INSERT INTO Logs (node_name, action, rider_id, old_value, new_value)
-       VALUES (?, 'UPDATE', ?, ?, ?)`,
-      [poolName(pool), id, JSON.stringify(oldRow), JSON.stringify(newRow)]
+      `INSERT INTO Logs (tx_id, node_name, action, rider_id, old_value, new_value, status)
+       VALUES (?, ?, 'UPDATE', ?, ?, ?, 'pending')`,
+      [txId, poolName(pool), id, JSON.stringify(oldRow), JSON.stringify(newRow)]
     );
 
-    return { id };
+    return { id, txId };
   });
 }
 
 // Delete rider
 export async function deleteRider(id, courierName) {
   const pool = chooseNodePool(courierName || "");
+  const txId = uuid();
 
   return await runTransaction(pool, async (conn) => {
     const [rows] = await conn.query("SELECT * FROM Riders WHERE id = ?", [id]);
@@ -125,11 +137,11 @@ export async function deleteRider(id, courierName) {
 
     // Log the delete
     await conn.query(
-      `INSERT INTO Logs (node_name, action, rider_id, old_value, new_value)
-       VALUES (?, 'DELETE', ?, ?, NULL)`,
-      [poolName(pool), id, JSON.stringify(oldRow)]
+      `INSERT INTO Logs (tx_id, node_name, action, rider_id, old_value, new_value, status)
+       VALUES (?, ?, 'DELETE', ?, ?, NULL, 'pending')`,
+      [txId, poolName(pool), id, JSON.stringify(oldRow)]
     );
 
-    return { id };
+    return { id, txId };
   });
 }
