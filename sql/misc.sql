@@ -10,6 +10,8 @@ TRUNCATE TABLE Logs;
 
 -- Drop everything
 DROP DATABASE IF EXISTS ridersdb;
+
+-- Drop triggers
 DROP TRIGGER IF EXISTS riders_after_insert;
 DROP TRIGGER IF EXISTS riders_after_update;
 DROP TRIGGER IF EXISTS riders_after_delete;
