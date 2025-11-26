@@ -1,12 +1,12 @@
-import { nodes } from "../config/db";
-import { applyLogToNode } from "../utils/applyLog";
+import { nodes } from "../config/db.js";
+import { applyLogToNode } from "../utils/applyLog.js";
 
-async function getMaxLogId(pool: any) {
+async function getMaxLogId(pool) {
   const [[row]] = await pool.query(`SELECT MAX(id) AS maxId FROM Logs`);
-  return row.maxId ?? 0;
+  return row.maxId || 0;
 }
 
-async function getLogsSince(pool: any, sinceId: number) {
+async function getLogsSince(pool, sinceId) {
   const [rows] = await pool.query(
     `SELECT * FROM Logs WHERE id > ? ORDER BY id ASC`,
     [sinceId]
@@ -14,7 +14,7 @@ async function getLogsSince(pool: any, sinceId: number) {
   return rows;
 }
 
-async function syncPair(a: any, b: any) {
+async function syncPair(a, b) {
   const maxA = await getMaxLogId(a.pool);
   const maxB = await getMaxLogId(b.pool);
 

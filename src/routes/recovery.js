@@ -1,9 +1,9 @@
-import { Router, Request, Response } from "express";
-import { recoverNodes } from "../services/recoveryService";
+import { Router } from "express";
+import { recoverNodes } from "../services/recoveryService.js";
 
 const router = Router();
 
-router.post("/", async (_req: Request, res: Response) => {
+router.post("/", async (_req, res) => {
   try {
     const report = await recoverNodes();
     res.json(report);
@@ -13,7 +13,7 @@ router.post("/", async (_req: Request, res: Response) => {
   }
 });
 
-router.get("/status", (_req: Request, res: Response) => {
+router.get("/status", (_req, res) => {
   res.json({ status: "ready" });
 });
 
