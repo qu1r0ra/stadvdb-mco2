@@ -7,7 +7,6 @@ from scripts.db.utils import connect_db
 
 def load_csv_to_node(csv_path: Path, connection):
     df = pd.read_csv(csv_path)
-    cursor = connection.cursor()
 
     insert_sql = """
         INSERT INTO Riders
@@ -16,22 +15,23 @@ def load_csv_to_node(csv_path: Path, connection):
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
     """
 
-    for _, row in df.iterrows():
-        cursor.execute(
-            insert_sql,
-            (
-                row["courierName"],
-                row["vehicleType"],
-                row["firstName"],
-                row["lastName"],
-                row["gender"],
-                None if pd.isna(row["age"]) else int(row["age"]),
-                row["createdAt"],
-                row["updatedAt"],
-            ),
-        )
+    with connection.cursor() as cursor:
+        for _, row in df.iterrows():
+            cursor.execute(
+                insert_sql,
+                (
+                    row["courierName"],
+                    row["vehicleType"],
+                    row["firstName"],
+                    row["lastName"],
+                    row["gender"],
+                    None if pd.isna(row["age"]) else int(row["age"]),
+                    row["createdAt"],
+                    row["updatedAt"],
+                ),
+            )
+        connection.commit()
 
-    cursor.close()
     print(f"[INFO] Loaded {len(df)} rows → {csv_path}")
 
 
