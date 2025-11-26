@@ -8,6 +8,12 @@ SELECT * FROM Riders;
 TRUNCATE TABLE Riders;
 TRUNCATE TABLE Logs;
 
+-- Drop everything
+DROP DATABASE IF EXISTS ridersdb;
+DROP TRIGGER IF EXISTS riders_after_insert;
+DROP TRIGGER IF EXISTS riders_after_update;
+DROP TRIGGER IF EXISTS riders_after_delete;
+
 -- Show triggers
 SHOW TRIGGERS;
 
@@ -27,7 +33,7 @@ ALTER TABLE Riders
 MODIFY COLUMN vehicleType ENUM('Motorcycle', 'Bicycle', 'Tricycle', 'Car') NOT NULL;
 
 -- Create user with all privileges
-CREATE USER 'root'@'%' IDENTIFIED BY 'd5HjGBVAzypL2cKDkmCvqUQh';
+CREATE USER 'root'@'%' IDENTIFIED BY (insert password);
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
 FLUSH PRIVILEGES;
 
