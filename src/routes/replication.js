@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { nodes } from "../config/db.js";
-import { retryFailedLogs } from "../services/recoveryService.js";
+import {
+  retryFailedLogs,
+  recoverNodes,
+  syncPair,
+} from "../services/recoveryService.js";
 
 const router = Router();
 
@@ -35,6 +39,23 @@ router.post("/retry-failed", async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error("retry-failed error:", err);
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// Trigger replication: if body has { source, target } -> sync pair; otherwise run full recoverNodes()
+router.post("/replicate", async (req, res) => {
+  try {
+    const { source, target } = req.body || {};
+    if (source && target) {
+      const result = await syncPair(source, target);
+      return res.json({ type: "pair", source, target, result });
+    } else {
+      const result = await recoverNodes();
+      return res.json({ type: "full", result });
+    }
+  } catch (err) {
+    console.error("replicate error:", err);
     res.status(500).json({ error: String(err) });
   }
 });
