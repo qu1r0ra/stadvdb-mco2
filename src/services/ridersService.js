@@ -1,5 +1,8 @@
+// services/ridersService.js
 import { nodes } from "../config/db.js";
 import { v4 as uuid } from "uuid";
+import { runTransaction } from "../utils/transactions.js";
+import { info, warn, error } from "../utils/logger.js";
 
 // Choose correct node pool for inserts
 function chooseNodePool(courier) {
@@ -13,28 +16,9 @@ function poolName(pool) {
   return "node3";
 }
 
-// Transaction helper with repeatable read
-async function runTransaction(pool, cb) {
-  const conn = await pool.getConnection();
-  try {
-    await conn.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
-    await conn.beginTransaction();
-
-    const result = await cb(conn);
-
-    await conn.commit();
-    return result;
-  } catch (err) {
-    try {
-      await conn.rollback();
-    } catch (_) {}
-    throw err;
-  } finally {
-    conn.release();
-  }
-}
-
-// Insert rider
+/**
+ * Insert a rider and create a pending log (with tx_id)
+ */
 export async function insertRider(data) {
   const pool = chooseNodePool(data.courierName);
   const txId = uuid();
@@ -60,7 +44,7 @@ export async function insertRider(data) {
     ]);
     const newRow = rows[0];
 
-    // Log the insert
+    // Insert log entry with tx_id and pending status
     await conn.query(
       `INSERT INTO Logs (tx_id, node_name, action, rider_id, old_value, new_value, status)
        VALUES (?, ?, 'INSERT', ?, NULL, ?, 'pending')`,
@@ -71,26 +55,31 @@ export async function insertRider(data) {
   });
 }
 
-// Get all riders
+/**
+ * Get all riders. Prefer central node1; fallback to fragments.
+ */
 export async function getAllRiders() {
   try {
     const [rows] = await nodes.node1.pool.query("SELECT * FROM Riders");
     return rows;
   } catch (err) {
+    warn("node1 read failed, falling back to fragments:", err);
     const [r2] = await nodes.node2.pool.query("SELECT * FROM Riders");
     const [r3] = await nodes.node3.pool.query("SELECT * FROM Riders");
     return [...r2, ...r3];
   }
 }
 
-// Update rider
+/**
+ * Update rider by id. Creates log with tx_id & pending.
+ */
 export async function updateRider(id, data) {
   const pool = chooseNodePool(data.courierName || "");
   const txId = uuid();
 
   return await runTransaction(pool, async (conn) => {
     const [rows] = await conn.query("SELECT * FROM Riders WHERE id = ?", [id]);
-    if (rows.length === 0) throw new Error(`Rider ${id} not found`);
+    if (!rows || rows.length === 0) throw new Error(`Rider ${id} not found`);
     const oldRow = rows[0];
 
     const fields = [];
@@ -99,7 +88,7 @@ export async function updateRider(id, data) {
       fields.push(`${key} = ?`);
       values.push(value);
     }
-    if (fields.length === 0) return { id, txId }; // nothing to update
+    if (fields.length === 0) return { id, txId };
 
     values.push(id);
     await conn.query(
@@ -112,7 +101,7 @@ export async function updateRider(id, data) {
     ]);
     const newRow = newRows[0];
 
-    // Log the update
+    // Log update
     await conn.query(
       `INSERT INTO Logs (tx_id, node_name, action, rider_id, old_value, new_value, status)
        VALUES (?, ?, 'UPDATE', ?, ?, ?, 'pending')`,
@@ -123,19 +112,21 @@ export async function updateRider(id, data) {
   });
 }
 
-// Delete rider
+/**
+ * Delete rider. Creates pending log.
+ */
 export async function deleteRider(id, courierName) {
   const pool = chooseNodePool(courierName || "");
   const txId = uuid();
 
   return await runTransaction(pool, async (conn) => {
     const [rows] = await conn.query("SELECT * FROM Riders WHERE id = ?", [id]);
-    if (rows.length === 0) throw new Error(`Rider ${id} not found`);
+    if (!rows || rows.length === 0) throw new Error(`Rider ${id} not found`);
     const oldRow = rows[0];
 
     await conn.query("DELETE FROM Riders WHERE id = ?", [id]);
 
-    // Log the delete
+    // Log delete
     await conn.query(
       `INSERT INTO Logs (tx_id, node_name, action, rider_id, old_value, new_value, status)
        VALUES (?, ?, 'DELETE', ?, ?, NULL, 'pending')`,
