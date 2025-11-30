@@ -6,6 +6,7 @@ const state = {
   failoverMode: false,
   lastHealthCheck: null,
   consecutiveFailures: 0,
+  manualOverride: false, // If true, ignore health checks
 };
 
 const HEALTH_CHECK_INTERVAL_MS = 5000; // 5 seconds
@@ -49,6 +50,7 @@ export function promoteSlaves() {
   console.log('[FAILOVER] Manually promoting Node 2/3 to masters');
   state.node1Status = 'down';
   state.failoverMode = true;
+  state.manualOverride = true; // Prevent auto-recovery
   return getFailoverStatus();
 }
 
@@ -60,6 +62,7 @@ export function demoteSlaves() {
   state.node1Status = 'healthy';
   state.failoverMode = false;
   state.consecutiveFailures = 0;
+  state.manualOverride = false; // Re-enable auto-recovery
   return getFailoverStatus();
 }
 
@@ -72,7 +75,7 @@ async function healthMonitoringLoop() {
 
   if (isHealthy) {
     // Node 1 is healthy
-    if (state.node1Status === 'down') {
+    if (state.node1Status === 'down' && !state.manualOverride) {
       // Node 1 has recovered!
       console.log('[FAILOVER] Node 1 recovered! Demoting Node 2/3 to slaves...');
       state.consecutiveFailures = 0;

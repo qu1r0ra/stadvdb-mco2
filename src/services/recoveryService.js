@@ -18,7 +18,32 @@ const BACKOFF_BASE_MS = 100; // backoff base for retries (100ms -> 300ms -> 900m
  * Node 1 replicates all logs to Node 2/3 during normal operation.
  */
 export async function getPendingLogsFromSource(source, targetName, limit = BATCH_SIZE) {
-  const sql = `SELECT * FROM Logs WHERE status = 'pending' ORDER BY id ASC LIMIT ?`;
+  let filterClause = "";
+
+  // If pulling FROM node1, we must filter based on the target node's partition responsibility
+  if (source.name === "node1") {
+    if (targetName === "node2") {
+      // Node 2 only wants JNT
+      filterClause = `
+        AND (
+          (new_value IS NOT NULL AND JSON_UNQUOTE(JSON_EXTRACT(new_value, '$.courierName')) = 'JNT')
+          OR
+          (new_value IS NULL AND JSON_UNQUOTE(JSON_EXTRACT(old_value, '$.courierName')) = 'JNT')
+        )
+      `;
+    } else if (targetName === "node3") {
+      // Node 3 wants everything EXCEPT JNT
+      filterClause = `
+        AND (
+          (new_value IS NOT NULL AND JSON_UNQUOTE(JSON_EXTRACT(new_value, '$.courierName')) != 'JNT')
+          OR
+          (new_value IS NULL AND JSON_UNQUOTE(JSON_EXTRACT(old_value, '$.courierName')) != 'JNT')
+        )
+      `;
+    }
+  }
+
+  const sql = `SELECT * FROM Logs WHERE status = 'pending' ${filterClause} ORDER BY id ASC LIMIT ?`;
   const [rows] = await source.pool.query(sql, [limit]);
   return rows;
 }
@@ -226,5 +251,79 @@ export async function retryFailedLogs(sourceName, targetName) {
     retried,
     checked: failedRows.length,
     timestamp: new Date().toISOString(),
+  };
+}
+/**
+ * checkConsistency: Verify that Node 1 data matches Node 2 + Node 3 combined.
+ * - Fetches all riders from Node 1.
+ * - Fetches all riders from Node 2 and Node 3.
+ * - Compares counts and IDs.
+ */
+export async function checkConsistency() {
+  const [r1] = await nodes.node1.pool.query("SELECT * FROM Riders ORDER BY id ASC");
+  const [r2] = await nodes.node2.pool.query("SELECT * FROM Riders ORDER BY id ASC");
+  const [r3] = await nodes.node3.pool.query("SELECT * FROM Riders ORDER BY id ASC");
+
+  const node1Count = r1.length;
+  const node2Count = r2.length;
+  const node3Count = r3.length;
+
+  let consistent = true;
+  let details = [];
+
+  // Build a full picture: Node 1 should contain all unique riders (by id+courierName)
+  // Node 2+3 should partition them correctly
+  const r1Map = new Map(r1.map(r => [`${r.id}-${r.courierName}`, r]));
+  const r2Map = new Map(r2.map(r => [`${r.id}-${r.courierName}`, r]));
+  const r3Map = new Map(r3.map(r => [`${r.id}-${r.courierName}`, r]));
+
+  // Check if all Node 2/3 riders exist in Node 1
+  for (const [key, rider] of r2Map) {
+    if (!r1Map.has(key)) {
+      consistent = false;
+      details.push(`Rider ${key} exists in Node 2 but not in Node 1`);
+    }
+  }
+  for (const [key, rider] of r3Map) {
+    if (!r1Map.has(key)) {
+      consistent = false;
+      details.push(`Rider ${key} exists in Node 3 but not in Node 1`);
+    }
+  }
+
+  // Check if all Node 1 riders exist in either Node 2 or Node 3
+  for (const [key, rider] of r1Map) {
+    const inNode2 = r2Map.has(key);
+    const inNode3 = r3Map.has(key);
+    if (!inNode2 && !inNode3) {
+      consistent = false;
+      details.push(`Rider ${key} exists in Node 1 but not in Node 2 or Node 3`);
+    }
+  }
+
+  // Verify Partitioning (Node 2 = JNT, Node 3 = Non-JNT)
+  const node2NonJNT = r2.filter(r => r.courierName !== 'JNT');
+  const node3JNT = r3.filter(r => r.courierName === 'JNT');
+
+  if (node2NonJNT.length > 0) {
+    consistent = false;
+    details.push(`Node 2 has non-JNT riders: ${node2NonJNT.map(r => `${r.id}(${r.courierName})`).join(', ')}`);
+  }
+  if (node3JNT.length > 0) {
+    consistent = false;
+    details.push(`Node 3 has JNT riders: ${node3JNT.map(r => `${r.id}(${r.courierName})`).join(', ')}`);
+  }
+
+  // Collect ID lists
+  const r1Ids = r1.map(r => r.id);
+  const r2Ids = r2.map(r => r.id);
+  const r3Ids = r3.map(r => r.id);
+  const slaveIds = [...r2Ids, ...r3Ids];
+
+  return {
+    consistent,
+    counts: { node1: node1Count, node2: node2Count, node3: node3Count, combined: r2Map.size + r3Map.size },
+    ids: { node1: r1Ids, node2: r2Ids, node3: r3Ids, slaves: slaveIds },
+    details
   };
 }
