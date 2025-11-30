@@ -14,41 +14,82 @@ A web application that connects to a distributed database system which supports 
 
 ## Overview
 
-This project implements a **distributed database system** with:
+This project implements a **master-slave distributed database system** with:
 
-- Fragmented storage
-- Concurrency-safe writes
-- Bidirectional replication
-- Automatic recovery
-- Application-level write-ahead logging
+- **Master-slave replication** with automatic failover
+- **Concurrency-safe writes** with REPEATABLE READ isolation and deadlock handling
+- **Automatic health monitoring** and failure detection (5-second intervals)
+- **Partition-aware failover** (JNT vs. non-JNT couriers during Node 1 failure)
+- **Application-level write-ahead logging** for durability and replication
+- **Eventually consistent recovery** with catch-up synchronization
 
-Backend uses **Node.js** and **Express**.
-Data is distributed across three remote VM nodes.
+Backend uses **Node.js v20.18.0+** and **Express**.
+Data is distributed across **three remote MySQL 8.0 VM nodes**.
+
+### Key Design Principles
+
+1. **Master-Slave Simplicity**: Node 1 handles all writes during normal operation
+2. **Automatic Failover**: Node 2/3 promoted to masters when Node 1 fails
+3. **Partition-Aware**: Failover maintains JNT/non-JNT separation
+4. **Unidirectional Replication**: Master → slaves during normal operation
+5. **Automatic Recovery**: Node 1 catches up from slaves when returning
 
 ---
 
 ## Features
 
-- Write-ahead logs on all write operations
-- Fragment-aware routing
-- Deadlock-tolerant transactions
-- Batch replication (100 logs)
-- Full recovery with consistent catch-up
-- Node1 read prioritization with fallback
-- Admin utilities for failed logs
+### Core Functionality
+
+- **Write-ahead logging** on all INSERT/UPDATE/DELETE operations
+- **Master-slave replication** (Node 1 → Node 2/3 during normal operation)
+- **Automatic failover** (Node 2/3 promoted when Node 1 fails)
+- **Health monitoring** (5-second intervals, 3-strike failure detection)
+- **Deadlock-tolerant transactions** (2 retries, exponential backoff)
+- **Batch replication** (100 logs per batch for efficiency)
+- **Partition-aware failover** (JNT → Node 2, others → Node 3)
+- **Automatic recovery** (Node 1 catches up from slaves)
+- **Admin utilities** for manual failover control
+
+### Advanced Capabilities
+
+- **REPEATABLE READ isolation** enforced per transaction
+- **Idempotent replication** (safe to replay operations)
+- **Automatic promotion/demotion** (slaves become masters during failover)
+- **Observable failures** (failed logs tracked in ReplicationErrors table)
+- **High availability** (partial write availability during Node 1 failure)
 
 ---
 
 ## Architecture
 
-See `ARCHITECTURE.md`.
+See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for comprehensive details.
 
-Main components:
+### System Components
 
-- `/services` — CRUD and replication logic
-- `/routes` — Express API endpoints
-- `/utils` — transaction manager, logging, sleep helper
-- `/scripts/db` — dataset loader
+- **`/services`** — Business logic (CRUD operations, replication, recovery)
+- **`/routes`** — Express API endpoints (riders, recovery, replication admin)
+- **`/utils`** — Transaction manager, logging utilities, helper functions
+- **`/scripts`** — Database initialization and test suite
+- **`/tests`** — Integration test suite
+- **`/sql`** — Schema definitions, triggers (deprecated), misc utilities
+
+### Data Flow
+
+```
+Client Request
+    ↓
+Express Router (/api/riders, /api/recovery, /api/replication)
+    ↓
+Service Layer (ridersService, recoveryService)
+    ↓
+Transaction Manager (runTransaction with deadlock handling)
+    ↓
+MySQL Pool (Node 1, Node 2, or Node 3)
+    ↓
+Write-Ahead Log (atomic with main write)
+    ↓
+Replication (pull-based, batch-driven, partition-filtered)
+```
 
 ---
 
@@ -105,3 +146,20 @@ Main components:
 | GET    | /api/replication/failed/:node  | List failed logs  |
 | POST   | /api/replication/retry-failed  | Retry failures    |
 | POST   | /api/replication/replicate     | Force sync pair   |
+| GET    | /api/replication/failover-status | Check failover status |
+| POST   | /api/replication/promote       | Manual failover (promote slaves) |
+| POST   | /api/replication/demote        | Manual recovery (demote slaves) |
+| POST   | /api/replication/cleanup       | Clear all tables and reset ID offsets (testing) |
+| GET    | /api/replication/consistency-check | Verify data consistency across nodes |
+
+---
+
+## ID Range Partitioning
+
+To prevent auto-increment ID collisions during failover, each node uses a distinct ID range:
+
+- **Node 1**: 1 - 999,999 (normal operation)
+- **Node 2**: 1,000,000 - 1,999,999 (failover mode only)
+- **Node 3**: 2,000,000 - 2,999,999 (failover mode only)
+
+This ensures globally unique IDs even when nodes operate independently during network partitions.

@@ -1,4 +1,5 @@
 import { Router } from "express";
+console.log(">>> LOADING src/routes/riders.js <<<");
 import {
   insertRider,
   updateRider,
@@ -26,7 +27,7 @@ router.post("/", async (req, res) => {
     res.json({ status: "ok", ...result });
   } catch (err) {
     console.error("POST /riders error:", err);
-    res.status(500).json({ error: "Insert failed" });
+    res.status(500).json({ error: "Insert failed", details: err.message });
   }
 });
 

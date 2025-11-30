@@ -1,37 +1,39 @@
 {
-  "name": "stadvdb-mco2",
-  "version": "1.0.0",
-  "description": "A web application that connects to a distributed database system which supports concurrent multi-user access. Created for STADVDB (Advanced Database Systems).",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "node src/server.js"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/qu1r0ra/stadvdb-mco2.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "module",
-  "engines": {
-    "node": "20.18.0",
-    "npm": "10.8.2"
-  },
-  "engineStrict": true,
-  "bugs": {
-    "url": "https://github.com/qu1r0ra/stadvdb-mco2/issues"
-  },
-  "homepage": "https://github.com/qu1r0ra/stadvdb-mco2#readme",
-  "dependencies": {
-    "body-parser": "^2.2.0",
-    "dotenv": "^17.2.3",
-    "express": "^5.1.0",
-    "mysql2": "^3.15.3",
-    "uuid": "^13.0.0"
-  }
+    "name": "stadvdb-mco2",
+    "version": "1.0.0",
+    "description": "A web application that connects to a distributed database system which supports concurrent multi-user access. Created for STADVDB (Advanced Database Systems).",
+    "main": "index.js",
+    "directories": {
+        "doc": "docs"
+    },
+    "scripts": {
+        "test": "node tests/unit/replication.test.js && node tests/integration/full_suite.test.js",
+        "test:unit": "node tests/unit/replication.test.js",
+        "test:integration": "node tests/integration/full_suite.test.js",
+        "dev": "node src/server.js"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/qu1r0ra/stadvdb-mco2.git"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "type": "module",
+    "engines": {
+        "node": "20.18.0",
+        "npm": "10.8.2"
+    },
+    "engineStrict": true,
+    "bugs": {
+        "url": "https://github.com/qu1r0ra/stadvdb-mco2/issues"
+    },
+    "homepage": "https://github.com/qu1r0ra/stadvdb-mco2#readme",
+    "dependencies": {
+        "body-parser": "^2.2.0",
+        "dotenv": "^17.2.3",
+        "express": "^5.1.0",
+        "mysql2": "^3.15.3",
+        "uuid": "^13.0.0"
+    }
 }
