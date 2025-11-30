@@ -246,39 +246,71 @@ Admin tools:
 ### `/failover` (New)
 
 **Manual failover control:**
-- `POST /api/failover/promote` - Manually promote Node 2/3 to masters
-- `POST /api/failover/demote` - Manually demote Node 2/3 to slaves
-- `GET /api/failover/status` - Check current master/slave status
+- `POST /api/replication/promote` - Manually promote Node 2/3 to masters
+- `POST /api/replication/demote` - Manually demote Node 2/3 to slaves
+- `GET /api/replication/failover-status` - Check current master/slave status
+
+### `/testing` (New)
+
+**Testing utilities:**
+- `POST /api/replication/cleanup` - Clear all tables and reset AUTO_INCREMENT offsets
+- `GET /api/replication/consistency-check` - Verify Node 1 data matches Node 2+3 combined
 
 ---
 
-## 7. Summary of Guarantees
+## 7. ID Range Partitioning
 
-### 7.1 Correctness Guarantees
+### 7.1 Problem: Auto-Increment Collisions
+
+During failover, Node 2 and Node 3 operate independently and may assign the same IDs to different riders, causing conflicts when Node 1 recovers.
+
+### 7.2 Solution: Range-Based Partitioning
+
+Each node uses a distinct AUTO_INCREMENT offset:
+
+- **Node 1**: 1 - 999,999
+- **Node 2**: 1,000,000 - 1,999,999
+- **Node 3**: 2,000,000 - 2,999,999
+
+**Implementation**: During cleanup, `ALTER TABLE Riders AUTO_INCREMENT = <offset>` is executed on each node.
+
+**Benefits**:
+- Zero application code changes
+- Globally unique IDs across all nodes
+- No coordination overhead
+- 1 million IDs per node (sufficient for typical workloads)
+
+---
+
+## 8. Summary of Guarantees
+
+### 8.1 Correctness Guarantees
 
 - **No lost updates**: All writes are logged atomically
 - **Durability**: Logs ensure recoverability even after crashes
 - **Idempotent replication**: Safe to replay operations during recovery
 - **Eventual consistency**: All nodes converge after failover recovery
 - **Last-Write-Wins**: Timestamp-based conflict resolution
+- **Globally unique IDs**: Range partitioning prevents ID collisions
 
-### 7.2 Availability Guarantees
+### 8.2 Availability Guarantees
 
 - **Master-slave with failover**: Node 1 failure triggers automatic promotion
 - **Partition-level availability**: JNT and non-JNT writes remain independent
 - **Automatic deadlock recovery**: 2 retries with exponential backoff
 - **Graceful degradation**: Partial write availability during Node 1 failure
 
-### 7.3 Performance Characteristics
+### 8.3 Performance Characteristics
 
 - **Batch-based replication**: Efficient network utilization (100 logs/batch)
 - **Unidirectional replication**: Reduced overhead during normal operation
 - **REPEATABLE READ isolation**: Balanced consistency and concurrency
 - **Health monitoring**: 5-second intervals, minimal overhead
 
-### 7.4 Operational Guarantees
+### 8.4 Operational Guarantees
 
 - **Transparent logging**: Application-level, no hidden triggers
 - **Observable failures**: Failed logs tracked in `ReplicationErrors`
 - **Manual intervention**: Admin endpoints for failover control
 - **Automatic recovery**: Node 1 catches up from slaves when returning
+- **Consistency verification**: Endpoint to verify data integrity across nodes

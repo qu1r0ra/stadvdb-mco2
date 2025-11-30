@@ -291,10 +291,10 @@ This caused:
 
 | Direction | Filtering Applied? | Reason |
 |-----------|-------------------|--------|
-| Node 2 → Node 1 | ❌ No | Node 1 accepts all logs (aggregation node) |
-| Node 3 → Node 1 | ❌ No | Node 1 accepts all logs (aggregation node) |
-| Node 1 → Node 2 | ✅ Yes | Only send JNT logs to Node 2 |
-| Node 1 → Node 3 | ✅ Yes | Only send non-JNT logs to Node 3 |
+| Node 2 → Node 1 | No | Node 1 accepts all logs (aggregation node) |
+| Node 3 → Node 1 | No | Node 1 accepts all logs (aggregation node) |
+| Node 1 → Node 2 | Yes | Only send JNT logs to Node 2 |
+| Node 1 → Node 3 | Yes | Only send non-JNT logs to Node 3 |
 
 #### 2.5.3. Implementation Details
 
@@ -357,13 +357,13 @@ LIMIT 100
 
 **Alternative Approaches Rejected**:
 
-- ❌ **Application-level filtering**: Would still waste bandwidth fetching irrelevant logs
-- ❌ **Separate log tables per partition**: Adds complexity, harder to maintain
-- ❌ **Post-fetch filtering**: Wastes batch quota on irrelevant logs
+- **Application-level filtering**: Would still waste bandwidth fetching irrelevant logs
+- **Separate log tables per partition**: Adds complexity, harder to maintain
+- **Post-fetch filtering**: Wastes batch quota on irrelevant logs
 
 **Testing Verification**:
 
-Unit tests in `tests/unit/replication.test.js` verify:
+Unit tests in `tests/integration/full_suite.test.js` verify:
 - Node 2 only receives JNT logs from Node 1
 - Node 3 only receives non-JNT logs from Node 1
 - DELETE operations are correctly filtered by `old_value`
@@ -556,6 +556,43 @@ The partition rule ensures write sets never overlap.
 
 **Impact**: No push storms, centralized responsibility, cleaner error handling.
 
+### 5.5. ID Range Partitioning
+
+**Problem**: During failover, Node 2 and Node 3 operate independently using their own AUTO_INCREMENT sequences. This causes ID collisions when both assign the same ID to different riders.
+
+**Solution**: Allocate distinct ID ranges to each node:
+- Node 1: 1 - 999,999
+- Node 2: 1,000,000 - 1,999,999
+- Node 3: 2,000,000 - 2,999,999
+
+**Implementation**:
+```sql
+-- During cleanup/initialization
+ALTER TABLE Riders AUTO_INCREMENT = 1;        -- Node 1
+ALTER TABLE Riders AUTO_INCREMENT = 1000000;  -- Node 2
+ALTER TABLE Riders AUTO_INCREMENT = 2000000;  -- Node 3
+```
+
+**Why This Works**:
+1. **Zero coordination overhead** - No distributed locks or consensus
+2. **MySQL-native** - Uses built-in AUTO_INCREMENT feature
+3. **No schema changes** - ID column remains INT (supports 2.1 billion)
+4. **Failover-safe** - Each node can operate independently
+5. **Simple to understand** - Clear visual separation in data
+
+**Trade-offs**:
+- IDs are not sequential across the system (acceptable for most applications)
+- Fixed capacity per node (1M IDs, easily increased if needed)
+- ID reveals which node created the record (could be a feature for debugging)
+
+**Alternative Approaches Rejected**:
+1. **UUIDs** - Larger storage (16 bytes vs 4), slower indexing, not human-readable
+2. **Snowflake IDs** - Requires synchronized clocks, more complex
+3. **Centralized ID server** - Single point of failure, network overhead
+4. **Interleaved IDs (modulo)** - Non-sequential, harder to debug
+
+**Impact**: Eliminates ID collisions with minimal complexity, maintaining performance and debuggability.
+
 ---
 
 ## 6. Future Enhancements
@@ -569,9 +606,10 @@ Potential improvements for production deployment:
 5. **Auto-retry**: Exponential backoff for failed logs
 6. **Partition rebalancing**: Dynamic partition assignment
 7. **Read replicas**: Add read-only nodes for scaling
+8. **Dynamic ID ranges**: Adjust ranges based on write patterns
 
 ---
 
-**Document Version**: 2.0
+**Document Version**: 3.0
 **Last Updated**: 2025-11-30
 **Authors**: STADVDB MCO2 Team

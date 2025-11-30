@@ -52,11 +52,11 @@ Data is distributed across **three remote MySQL 8.0 VM nodes**.
 
 ### Advanced Capabilities
 
-- 🔒 **REPEATABLE READ isolation** enforced per transaction
-- 🔄 **Idempotent replication** (safe to replay operations)
-- ⚡ **Automatic promotion/demotion** (slaves become masters during failover)
-- 📊 **Observable failures** (failed logs tracked in ReplicationErrors table)
-- 🚀 **High availability** (partial write availability during Node 1 failure)
+- **REPEATABLE READ isolation** enforced per transaction
+- **Idempotent replication** (safe to replay operations)
+- **Automatic promotion/demotion** (slaves become masters during failover)
+- **Observable failures** (failed logs tracked in ReplicationErrors table)
+- **High availability** (partial write availability during Node 1 failure)
 
 ---
 
@@ -70,6 +70,7 @@ See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for comprehensive details.
 - **`/routes`** — Express API endpoints (riders, recovery, replication admin)
 - **`/utils`** — Transaction manager, logging utilities, helper functions
 - **`/scripts`** — Database initialization and test suite
+- **`/tests`** — Integration test suite
 - **`/sql`** — Schema definitions, triggers (deprecated), misc utilities
 
 ### Data Flow
@@ -145,3 +146,20 @@ Replication (pull-based, batch-driven, partition-filtered)
 | GET    | /api/replication/failed/:node  | List failed logs  |
 | POST   | /api/replication/retry-failed  | Retry failures    |
 | POST   | /api/replication/replicate     | Force sync pair   |
+| GET    | /api/replication/failover-status | Check failover status |
+| POST   | /api/replication/promote       | Manual failover (promote slaves) |
+| POST   | /api/replication/demote        | Manual recovery (demote slaves) |
+| POST   | /api/replication/cleanup       | Clear all tables and reset ID offsets (testing) |
+| GET    | /api/replication/consistency-check | Verify data consistency across nodes |
+
+---
+
+## ID Range Partitioning
+
+To prevent auto-increment ID collisions during failover, each node uses a distinct ID range:
+
+- **Node 1**: 1 - 999,999 (normal operation)
+- **Node 2**: 1,000,000 - 1,999,999 (failover mode only)
+- **Node 3**: 2,000,000 - 2,999,999 (failover mode only)
+
+This ensures globally unique IDs even when nodes operate independently during network partitions.
