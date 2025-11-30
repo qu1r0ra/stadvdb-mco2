@@ -5,6 +5,11 @@ import {
   recoverNodes,
   syncPair,
 } from "../services/recoveryService.js";
+import {
+  getFailoverStatus,
+  promoteSlaves,
+  demoteSlaves,
+} from "../services/failoverService.js";
 
 const router = Router();
 
@@ -58,6 +63,21 @@ router.post("/replicate", async (req, res) => {
     console.error("replicate error:", err);
     res.status(500).json({ error: String(err) });
   }
+});
+
+// Failover control endpoints
+router.get("/failover-status", (_req, res) => {
+  res.json(getFailoverStatus());
+});
+
+router.post("/promote", (_req, res) => {
+  const status = promoteSlaves();
+  res.json({ message: "Node 2/3 promoted to masters", status });
+});
+
+router.post("/demote", (_req, res) => {
+  const status = demoteSlaves();
+  res.json({ message: "Node 2/3 demoted to slaves", status });
 });
 
 export default router;
