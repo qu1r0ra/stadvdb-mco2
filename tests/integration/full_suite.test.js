@@ -82,20 +82,51 @@ async function demoteSlaves() {
   return await res.json();
 }
 
+// Helper to check consistency
+async function checkConsistency() {
+  const res = await fetch(`${BASE_URL}/api/replication/consistency-check`);
+  if (!res.ok) throw new Error(`Failed to check consistency: ${await res.text()}`);
+  return await res.json();
+}
+
+// Helper to clean up database before tests
+async function cleanupDatabase() {
+  log("Clearing database tables...");
+  try {
+    const res = await fetch(`${BASE_URL}/api/replication/cleanup`, {
+      method: "POST"
+    });
+    if (!res.ok) {
+      log("Warning: Cleanup failed, tests will run with existing data");
+      return false;
+    }
+    const result = await res.json();
+    log("Database cleaned successfully");
+    return true;
+  } catch (err) {
+    log(`Warning: Cleanup failed (${err.message}), tests will run with existing data`);
+    return false;
+  }
+}
+
 // Wrapper for individual tests
 async function runTestSafe(name, fn) {
   try {
-    log(`\\n--- ${name} ---`);
+    log(`\n--- ${name} ---`);
     await fn();
-    log(`✅ ${name} PASSED`);
+    log(`[PASS] ${name}`);
   } catch (e) {
-    console.error(`❌ ${name} FAILED: ${e.message}`);
+    console.error(`[FAIL] ${name}: ${e.message}`);
   }
 }
 
 async function runTests() {
   log("Starting Master-Slave Architecture Test Suite...");
   log("=".repeat(60));
+
+  // Clean database before starting tests
+  await cleanupDatabase();
+  await sleep(500); // Give cleanup time to complete
 
   // Shared state
   let r1;
@@ -247,6 +278,15 @@ async function runTests() {
     assert.ok(riders.find(r => r.id === r8.id), "Rider should be in Node 1");
   });
 
+// Helper to check consistency
+async function checkConsistency() {
+  const res = await fetch(`${BASE_URL}/api/replication/consistency-check`);
+  if (!res.ok) throw new Error(`Failed to check consistency: ${await res.text()}`);
+  return await res.json();
+}
+
+// ... (existing code) ...
+
   await runTestSafe("Test 12: Node 2 Recovery - Catch-up from Node 1", async () => {
     log("Triggering replication for Node 2 to catch up...");
     const repResult = await replicate();
@@ -258,8 +298,25 @@ async function runTests() {
     log("Node 2 catch-up triggered");
   });
 
+  await runTestSafe("Test 13: Final Consistency Check", async () => {
+    log("Ensuring all replication is complete...");
+    await replicate();
+
+    log("Verifying consistency between Node 1 and Node 2/3...");
+    const result = await checkConsistency();
+    log("Consistency Result: " + JSON.stringify(result));
+
+    if (!result.consistent) {
+      log("DETAILS OF INCONSISTENCY:");
+      result.details.forEach(d => log(`  - ${d}`));
+    }
+
+    assert.equal(result.consistent, true, `Data should be consistent across nodes. ${result.details.join(', ')}`);
+    log("Node 1 data matches Node 2 + Node 3 combined.");
+  });
+
   log("\n" + "=".repeat(60));
-  log("✅ Test Suite Completed!");
+  log("Test Suite Completed.");
   log("=".repeat(60));
 }
 
