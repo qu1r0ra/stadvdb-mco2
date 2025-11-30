@@ -2,10 +2,21 @@ import { nodes } from "../config/db.js";
 import { v4 as uuid } from "uuid";
 import { runTransaction } from "../utils/transactions.js";
 import { info, warn, error } from "../utils/logger.js";
+import { isNode1Available } from "./failoverService.js";
 
-// Choose correct node pool for inserts (partition by courier)
-function chooseNodePool(courier) {
-  return courier === "JNT" ? nodes.node2.pool : nodes.node3.pool;
+/**
+ * Choose write node based on failover state
+ * - Normal operation: All writes go to Node 1
+ * - Failover mode: JNT → Node 2, non-JNT → Node 3
+ */
+function chooseWriteNode(courierName) {
+  if (isNode1Available()) {
+    // Normal operation: Node 1 is master
+    return nodes.node1.pool;
+  } else {
+    // Failover mode: Route by partition
+    return courierName === "JNT" ? nodes.node2.pool : nodes.node3.pool;
+  }
 }
 
 // Map pool object to node name string
@@ -19,7 +30,7 @@ function poolName(pool) {
  * Insert a rider and create a pending log (with tx_id)
  */
 export async function insertRider(data) {
-  const pool = chooseNodePool(data.courierName);
+  const pool = chooseWriteNode(data.courierName);
   const txId = uuid();
 
   return await runTransaction(pool, async (conn) => {
@@ -56,8 +67,22 @@ export async function insertRider(data) {
 
 /**
  * Get all riders. Prefer central node1; fallback to fragments.
+ * Failover-aware: If Node 1 is marked down, read from fragments immediately.
  */
 export async function getAllRiders() {
+  // If Node 1 is manually marked down (failover mode), skip trying to read from it
+  if (!isNode1Available()) {
+    warn("Node 1 is marked down (failover), reading from fragments");
+    try {
+      const [r2] = await nodes.node2.pool.query("SELECT * FROM Riders");
+      const [r3] = await nodes.node3.pool.query("SELECT * FROM Riders");
+      return [...r2, ...r3];
+    } catch (err) {
+      error("Fragment read failed:", err);
+      throw err;
+    }
+  }
+
   try {
     const [rows] = await nodes.node1.pool.query("SELECT * FROM Riders");
     return rows;
@@ -73,7 +98,7 @@ export async function getAllRiders() {
  * Update rider by id. Creates log with tx_id & pending.
  */
 export async function updateRider(id, data) {
-  const pool = chooseNodePool(data.courierName || "");
+  const pool = chooseWriteNode(data.courierName || "");
   const txId = uuid();
 
   return await runTransaction(pool, async (conn) => {
@@ -115,7 +140,7 @@ export async function updateRider(id, data) {
  * Delete rider. Creates pending log.
  */
 export async function deleteRider(id, courierName) {
-  const pool = chooseNodePool(courierName || "");
+  const pool = chooseWriteNode(courierName || "");
   const txId = uuid();
 
   return await runTransaction(pool, async (conn) => {

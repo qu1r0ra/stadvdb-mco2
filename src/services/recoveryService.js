@@ -1,7 +1,10 @@
 import { nodes } from "../config/db.js";
-import { applyLogToNode } from "../utils/applyLog.js";
+import { applyLogToNode as applyLogToNodeImported } from "../utils/applyLogNew.js";
 import sleep from "../utils/sleep.js";
 import { info, warn, error } from "../utils/logger.js";
+
+console.error(">>> recoveryService.js loaded <<<");
+console.error(">>> applyLogToNode source:", applyLogToNodeImported.toString());
 
 const BATCH_SIZE = 100;
 const APPLY_ATTEMPTS = 3; // number of attempts to apply a single log
@@ -10,12 +13,13 @@ const BACKOFF_BASE_MS = 100; // backoff base for retries (100ms -> 300ms -> 900m
 /**
  * Fetch a page of pending logs from `source.pool`.
  * Only returns logs with status = 'pending', ordered ASC by id.
+ *
+ * Note: Partition filtering removed for master-slave architecture.
+ * Node 1 replicates all logs to Node 2/3 during normal operation.
  */
-async function getPendingLogsFromSource(source, limit = BATCH_SIZE) {
-  const [rows] = await source.pool.query(
-    `SELECT * FROM Logs WHERE status = 'pending' ORDER BY id ASC LIMIT ?`,
-    [limit]
-  );
+export async function getPendingLogsFromSource(source, targetName, limit = BATCH_SIZE) {
+  const sql = `SELECT * FROM Logs WHERE status = 'pending' ORDER BY id ASC LIMIT ?`;
+  const [rows] = await source.pool.query(sql, [limit]);
   return rows;
 }
 
@@ -52,7 +56,7 @@ async function applyWithRetries(source, target, log) {
 
   while (attempts < APPLY_ATTEMPTS) {
     attempts++;
-    const res = await applyLogToNode(target.pool, log);
+    const res = await applyLogToNodeImported(target.pool, log);
     if (res.ok) return { ok: true, attempts };
 
     lastErr = res.error;
@@ -90,7 +94,7 @@ async function syncFromTo(sourceName, targetName) {
   let appliedCount = 0;
 
   while (true) {
-    const batch = await getPendingLogsFromSource(source, BATCH_SIZE);
+    const batch = await getPendingLogsFromSource(source, targetName, BATCH_SIZE);
     if (!batch || batch.length === 0) break;
 
     for (const log of batch) {
