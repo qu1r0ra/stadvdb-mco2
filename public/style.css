@@ -1,0 +1,213 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f4f4f9;
+    color: #333;
+    padding: 20px;
+}
+
+
+/* Extra styles for simulation controls */
+.simulation-panel {
+    background: #e9ecef;
+    border: 2px solid #ced4da;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-weight: bold;
+    font-size: 0.8em;
+    width: 80px;
+    text-align: center;
+}
+
+.online {
+    background: #28a745;
+    color: white;
+}
+
+.offline {
+    background: #dc3545;
+    color: white;
+}
+
+.console-log {
+    background: #333;
+    color: #0f0;
+    font-family: monospace;
+    padding: 10px;
+    height: 150px;
+    overflow-y: auto;
+    border-radius: 4px;
+    margin-top: 10px;
+    font-size: 0.85em;
+}
+
+.test-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+
+h1 {
+    text-align: center;
+    color: #444;
+}
+
+.controls {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+}
+
+.nodes-container {
+    display: flex;
+    gap: 20px;
+    justify-content: space-between;
+}
+
+.node-column {
+    flex: 1;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.node-header {
+    padding: 15px;
+    color: white;
+    text-align: center;
+}
+
+.central {
+    background: #007bff;
+}
+
+.node2 {
+    background: #28a745;
+}
+
+.node3 {
+    background: #17a2b8;
+}
+
+.input-group {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+input,
+select {
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    flex: 1;
+    max-width: 200px;
+}
+
+button {
+    padding: 10px 15px;
+    cursor: pointer;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    color: white;
+    transition: 0.2s;
+}
+
+.btn-add {
+    background: #28a745;
+}
+
+.btn-add:hover {
+    background: #218838;
+}
+
+.btn-update {
+    background: #007bff;
+    display: none;
+}
+
+.btn-cancel {
+    background: #6c757d;
+    display: none;
+}
+
+.btn-recovery {
+    background: #ff9800;
+    width: 100%;
+    margin-top: 10px;
+}
+
+.btn-recovery:hover {
+    background: #e68900;
+}
+
+.btn-sm {
+    padding: 4px 8px;
+    font-size: 0.8em;
+    margin: 0 2px;
+}
+
+.btn-del {
+    background: #dc3545;
+}
+
+.btn-edit {
+    background: #ffc107;
+    color: #333;
+}
+
+.table-wrapper {
+    padding: 0;
+    overflow-y: auto;
+    flex-grow: 1;
+    max-height: 600px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+}
+
+th {
+    position: sticky;
+    top: 0;
+    background: #eee;
+    z-index: 1;
+}
+
+th,
+td {
+    border-bottom: 1px solid #ddd;
+    padding: 10px;
+    text-align: left;
+}
+
+tr:hover {
+    background-color: #f8f9fa;
+}
+
+#status-msg {
+    text-align: center;
+    margin-top: 10px;
+    font-weight: bold;
+    min-height: 20px;
+    color: #555;
+}
