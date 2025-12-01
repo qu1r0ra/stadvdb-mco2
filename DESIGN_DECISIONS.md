@@ -63,13 +63,13 @@ We enforce **REPEATABLE READ per transaction** across all nodes.
 
 ## 2. Replication Design
 
-### 2.1. Master-Slave Architecture
+### 2.1. Master-First with Fallback Architecture
 
-**Decision**: Node 1 is the **Master** (Central). Node 2 and Node 3 are **Slaves** (Fragments).
+**Decision**: Node 1 is the **primary write target**. Node 2 and Node 3 are **fragments** that can accept writes during failover.
 
-- **Normal Operation**: All writes go to Node 1. Node 1 replicates to Node 2 and Node 3.
-- **Failover**: If Node 1 dies, Node 2 and Node 3 become independent Masters for their respective partitions.
-- **Why**: Simplifies consistency. Single writer (Node 1) means no write conflicts during normal operation.
+- **Normal Operation**: All writes **try Node 1 first** using try-catch logic. If Node 1 is unreachable, the write falls back to the appropriate fragment (Node 2 for JNT, Node 3 for others).
+- **Implementation**: `ridersService.js` wraps Node 1 writes in try-catch blocks. On connection errors, it immediately routes to the fragment based on `courierName`.
+- **Why**: Simplifies failover logic—no complex health monitoring required. The database connection failure itself triggers the fallback.
 
 ### 2.2. Partition-Based Filtering
 
@@ -79,14 +79,17 @@ We enforce **REPEATABLE READ per transaction** across all nodes.
 - **Node 1 -> Node 3**: Only replicates non-`JNT` riders.
 - **Why**: Implements the fragmentation requirement. Node 2 and Node 3 only hold their specific subset of data, while Node 1 holds the global view.
 
-### 2.3. Pull-Based Replication
+### 2.3. On-Demand Replication
 
-**Decision**: Nodes **pull** logs from their partners, rather than partners pushing logs.
+**Decision**: Replication is **manually triggered** via API endpoints, not automatic polling.
 
+- **Endpoints**:
+  - `POST /api/replication/replicate` - Trigger replication between specific nodes
+  - `POST /api/recovery` - Run full bidirectional synchronization
 - **Why**:
-  - **Flow Control**: The receiver controls the rate. If Node 2 is slow, it won't be overwhelmed by Node 1.
-  - **Firewall Friendly**: Outbound connections are usually allowed; inbound requires port opening.
-  - **State Tracking**: The receiver knows exactly what it last applied (`max(log_id)`).
+  - **Explicit Control**: Tests and admins can trigger replication exactly when needed.
+  - **Resource Efficiency**: No background polling consuming connections/CPU.
+  - **Debugging**: Easier to trace replication flow when it's explicit.
 
 ### 2.4. ID Range Partitioning
 
@@ -101,14 +104,16 @@ We enforce **REPEATABLE READ per transaction** across all nodes.
 
 ## 3. Recovery Design
 
-### 3.1. Automatic Failover
+### 3.1. Simulated Failover via Connection Proxy
 
-**Decision**: Health checks run every 5 seconds. 3 consecutive failures trigger failover.
+**Decision**: Node failure is simulated by toggling a `nodeStatus` flag, not by real health checks.
 
-- **Why**: Automates high availability. Users don't need to manually switch nodes.
 - **Mechanism**:
-  - **Detection**: `failoverService.js` pings Node 1.
-  - **Action**: If Node 1 is down, the API automatically routes writes to Node 2 (JNT) or Node 3 (Others).
+  - `src/config/db.js` wraps connection pools with a Proxy.
+  - Before every query, it checks `nodeStatus[nodeX]`.
+  - If `false`, it throws a `Connection refused` error.
+- **Triggering**: `POST /api/test/node-status` with `{node: "node1", status: false}` simulates a crash.
+- **Why**: Allows instant, deterministic failure testing without killing actual processes. Perfect for demonstrating recovery in controlled environments (exams, presentations).
 
 ### 3.2. Pairwise Synchronization
 
