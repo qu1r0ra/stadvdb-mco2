@@ -36,6 +36,19 @@ All transactions run under **REPEATABLE READ**. This is explicitly set per trans
 - Backoff: 100ms → 200ms → fail
 - Third attempt fails immediately
 
+### System Components
+
+- **`/services`** — Business logic (CRUD operations, replication, recovery, simulation)
+- **`/routes`** — Express API endpoints (riders, recovery, replication admin, test)
+- **`/utils`** — Transaction manager, logging utilities, helper functions
+- **`/views`** — EJS templates for the web dashboard
+- **`/public`** — Static assets (CSS, client-side JS)
+- **`/scripts`** — Database initialization and test suite
+- **`/tests`** — Integration test suite
+- **`/sql`** — Schema definitions, triggers (deprecated), misc utilities
+- **Frontend**: React-based web application for dashboard and admin tools
+- **Simulation**: Python scripts for generating load and testing fault tolerance
+
 ### 2.3 Transaction Management
 
 All writes use `runTransaction(pool, cb)`.
@@ -194,9 +207,50 @@ Runs full synchronization.
 
 Admin tools for pending/failed logs and forced replication.
 
+### `/failover` (New)
+
+**Manual failover control:**
+- `POST /api/replication/promote` - Manually promote Node 2/3 to masters
+- `POST /api/replication/demote` - Manually demote Node 2/3 to slaves
+- `GET /api/replication/failover-status` - Check current master/slave status
+
+### `/testing` (New)
+
+**Testing utilities:**
+- `POST /api/replication/cleanup` - Clear all tables and reset AUTO_INCREMENT offsets
+- `GET /api/replication/consistency-check` - Verify Node 1 data matches Node 2+3 combined
+
 ---
 
-## 8. Summary of Guarantees
+## 8. Simulation Architecture
+
+To meet the project requirements for demonstrating failure recovery and concurrency control without physical hardware manipulation, we implemented a simulation layer.
+
+### 8.1 Connection Proxy (`src/config/db.js`)
+
+We wrap the MySQL connection pools with a custom Proxy. This allows us to intercept every `getConnection` and `query` call.
+
+- **Mechanism**: A global `nodeStatus` object tracks the state (ONLINE/OFFLINE) of each node.
+- **Interception**: Before executing any query, the proxy checks `nodeStatus`.
+- **Simulation**: If a node is marked OFFLINE, the proxy throws a `Connection refused` error, mimicking a real network or server failure.
+
+### 8.2 Concurrency Testing (`src/services/simulationService.js`)
+
+We implemented a service to deterministically test transaction isolation levels.
+
+- **Case 1 (Read-Read)**: Two concurrent transactions read the same data. Used to verify shared locks (if any) or non-blocking reads.
+- **Case 2 (Read-Write)**: One transaction reads while another writes. Used to verify `REPEATABLE READ` vs `READ COMMITTED`.
+- **Case 3 (Write-Write)**: Two concurrent transactions update the same row. Used to verify locking behavior and wait timeouts.
+
+These tests run against the actual database but use `sleep()` to artificially extend transaction duration and force overlaps.
+
+---
+
+## 9. ID Range Partitioning
+
+---
+
+## 10. Summary of Guarantees
 
 - No lost updates
 - No write-write conflicts
