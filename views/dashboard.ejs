@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>MCO2: Distributed Transaction Manager</title>
+    <link rel="stylesheet" href="/style.css">
+    <style>
+        /* Extra styles for the new report table */
+        .report-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .report-table th,
+        .report-table td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .report-table th {
+            background-color: #333;
+            color: #fff;
+            position: sticky;
+            top: 0;
+        }
+
+        /* Actor Colors */
+        .row-t1 {
+            background-color: #e3f2fd;
+        }
+
+        /* Light Blue */
+        .row-t2 {
+            background-color: #ffebee;
+        }
+
+        /* Light Red */
+        .row-sys {
+            background-color: #f5f5f5;
+        }
+
+        /* Grey */
+        .row-res {
+            background-color: #e8f5e9;
+            font-weight: bold;
+        }
+
+        /* Green (Analysis) */
+        .row-err {
+            background-color: #ffe0e0;
+            color: #d32f2f;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>MCO2 Control Center</h1>
+
+    <div class="simulation-panel">
+        <h3>Step 4: Failure Simulation (Node Controls)</h3>
+        <div style="display: flex; gap: 20px; justify-content: center; margin-bottom: 15px;">
+            <div id="ctrl-node1">
+                <strong>Node 1 (Master):</strong> <span id="status-node1" class="status-badge online">ONLINE</span>
+                <button class="btn-sm btn-del" onclick="toggleNode('node1', false)">Kill</button>
+                <button class="btn-sm btn-add" onclick="toggleNode('node1', true)">Revive</button>
+            </div>
+            <div id="ctrl-node2">
+                <strong>Node 2 (JNT):</strong> <span id="status-node2" class="status-badge online">ONLINE</span>
+                <button class="btn-sm btn-del" onclick="toggleNode('node2', false)">Kill</button>
+                <button class="btn-sm btn-add" onclick="toggleNode('node2', true)">Revive</button>
+            </div>
+            <div id="ctrl-node3">
+                <strong>Node 3 (Other):</strong> <span id="status-node3" class="status-badge online">ONLINE</span>
+                <button class="btn-sm btn-del" onclick="toggleNode('node3', false)">Kill</button>
+                <button class="btn-sm btn-add" onclick="toggleNode('node3', true)">Revive</button>
+            </div>
+        </div>
+
+        <h3>Step 3: Concurrency Simulation</h3>
+
+        <div
+            style="background: #f8f9fa; padding: 15px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 15px;">
+            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                <div style="flex: 1;">
+                    <label style="font-size: 0.8em; color: #666; font-weight: bold;">Target Rider ID (Row to
+                        lock/read)</label>
+                    <input type="number" id="sim_id" placeholder="e.g. 1" style="width: 100%; padding: 5px;">
+                </div>
+                <div style="flex: 2;">
+                    <label style="font-size: 0.8em; color: #666; font-weight: bold;">Test Value (Data to Write)</label>
+                    <input type="text" id="sim_name" placeholder="e.g. DIRTY_DATA" style="width: 100%; padding: 5px;">
+                </div>
+            </div>
+
+            <label style="font-weight: bold;">Isolation Level:</label>
+            <select id="isoLevel" style="width: 100%; padding: 5px; margin-bottom: 10px;">
+                <option value="READ UNCOMMITTED">Read Uncommitted (Lowest)</option>
+                <option value="READ COMMITTED">Read Committed</option>
+                <option value="REPEATABLE READ" selected>Repeatable Read (Default)</option>
+                <option value="SERIALIZABLE">Serializable (Highest)</option>
+            </select>
+
+            <div style="display: flex; gap: 5px;">
+                <button class="btn-edit" style="flex: 1;" onclick="runTest(1)">Test 1: Read - Read (Dirty
+                    Check)</button>
+                <button class="btn-edit" style="flex: 1;" onclick="runTest(2)">Test 2: Read - Write (Phantom
+                    Check)</button>
+                <button class="btn-edit" style="flex: 1;" onclick="runTest(3)">Test 3: Write - Write (Lock
+                    Check)</button>
+            </div>
+        </div>
+
+        <div id="sim-results"
+            style="height: 300px; overflow-y: auto; background: #fff; border: 1px solid #ccc; border-radius: 4px;">
+            <table class="report-table">
+                <thead>
+                    <tr>
+                        <th style="width: 80px;">Time</th>
+                        <th style="width: 80px;">Actor</th>
+                        <th style="width: 120px;">Action</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody id="sim-table-body">
+                    <tr>
+                        <td colspan="4" style="text-align: center; color: #999; padding: 20px;">
+                            > Ready. Select a test above to view the timeline.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="controls">
+        <h3 style="text-align: center; margin-top: 0;">Rider Management</h3>
+        <input type="hidden" id="r_id">
+
+        <div class="input-group">
+            <input type="text" id="r_first" placeholder="First Name">
+            <input type="text" id="r_last" placeholder="Last Name">
+            <select id="r_vehicle">
+                <option value="Motorcycle">Motorcycle</option>
+                <option value="Bicycle">Bicycle</option>
+                <option value="Van">Van</option>
+            </select>
+            <select id="r_courier">
+                <option value="" disabled selected>Select Courier (Partition)</option>
+                <option value="JNT">JNT</option>
+                <option value="LALAMOVE">Lalamove / Others</option>
+            </select>
+        </div>
+
+        <div style="text-align: center;">
+            <p style="font-size: 0.8em; color: #666; margin-bottom: 5px;">
+                Destination: <strong>Master (Node 1)</strong> <br>
+                <span style="font-size: 0.85em;">(Falls back to Partition if Master fails)</span>
+            </p>
+            <button class="btn-add" id="btn-add" onclick="createRider()">+ Add New Rider</button>
+            <button class="btn-update" id="btn-update" onclick="submitUpdate()">✓ Save Changes</button>
+            <button class="btn-cancel" id="btn-cancel" onclick="resetForm()">Cancel</button>
+        </div>
+
+        <hr style="margin: 20px 0; border-top: 1px solid #eee;">
+
+        <div style="display: flex; gap: 10px; justify-content: center;">
+            <button class="btn-recovery" onclick="runRecovery()">Run Global Recovery (Sync Nodes)</button>
+            <button style="background: #6c757d; margin-top: 10px;" onclick="window.location.reload()">Refresh
+                Data</button>
+        </div>
+        <div id="status-msg">System Ready</div>
+    </div>
+
+    <div class="nodes-container">
+        <div class="node-column">
+            <div class="node-header central">
+                <h3>Node 1 (Central)</h3>
+                <small>Master Copy</small>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Rider Info</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% node1.forEach(r=> { %>
+                            <tr>
+                                <td>
+                                    <%= r.id %>
+                                </td>
+                                <td>
+                                    <strong>
+                                        <%= r.firstName %>
+                                            <%= r.lastName %>
+                                    </strong><br>
+                                    <small>
+                                        <%= r.courierName %> |
+                                            <%= r.vehicleType %>
+                                    </small>
+                                </td>
+                                <td>
+                                    <button class="btn-sm btn-edit"
+                                        onclick="editRider('<%= r.id %>', '<%= r.firstName %>', '<%= r.lastName %>', '<%= r.vehicleType %>', '<%= r.courierName %>')">Edit</button>
+                                    <button class="btn-sm btn-del"
+                                        onclick="deleteRider('<%= r.id %>', '<%= r.courierName %>')">X</button>
+                                </td>
+                            </tr>
+                            <% }) %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="node-column">
+            <div class="node-header node2">
+                <h3>Node 2 (JNT)</h3>
+                <small>Fragment 1</small>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Rider Info</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% node2.forEach(r=> { %>
+                            <tr>
+                                <td>
+                                    <%= r.id %>
+                                </td>
+                                <td>
+                                    <%= r.firstName %>
+                                        <%= r.lastName %>
+                                </td>
+                            </tr>
+                            <% }) %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="node-column">
+            <div class="node-header node3">
+                <h3>Node 3 (Others)</h3>
+                <small>Fragment 2</small>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Rider Info</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% node3.forEach(r=> { %>
+                            <tr>
+                                <td>
+                                    <%= r.id %>
+                                </td>
+                                <td>
+                                    <%= r.firstName %>
+                                        <%= r.lastName %> <br>
+                                            <small style="color:#666">
+                                                <%= r.courierName %>
+                                            </small>
+                                </td>
+                            </tr>
+                            <% }) %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const setStatus = (msg) => {
+            const el = document.getElementById('status-msg');
+            if (el) el.innerText = msg;
+        };
+
+        // --- SIMULATION FUNCTIONS (UPDATED FOR TABLE) ---
+
+        async function toggleNode(node, status) {
+            try {
+                const res = await fetch('/api/test/node-status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ node, status })
+                });
+                const data = await res.json();
+                updateNodeUI(data.nodeStatus);
+            } catch (e) { console.error(e); }
+        }
+
+        async function fetchNodeStatus() {
+            try {
+                const res = await fetch('/api/test/node-status');
+                const status = await res.json();
+                updateNodeUI(status);
+            } catch (e) { }
+        }
+
+        function updateNodeUI(status) {
+            for (const [node, isOnline] of Object.entries(status)) {
+                const el = document.getElementById('status-' + node);
+                if (el) {
+                    el.className = isOnline ? 'status-badge online' : 'status-badge offline';
+                    el.innerText = isOnline ? 'ONLINE' : 'OFFLINE';
+                }
+            }
+        }
+
+        // NEW: Render results in the table
+        async function runTest(caseId) {
+            const iso = document.getElementById('isoLevel').value;
+            const simId = document.getElementById('sim_id').value;
+            const simName = document.getElementById('sim_name').value;
+            const tbody = document.getElementById('sim-table-body');
+
+            if (!simId) return alert("Please enter a Target Rider ID!");
+
+            tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 20px;">Running Simulation (Please wait 3-5 seconds)...</td></tr>`;
+
+            // Prepare Payload
+            const payload = {
+                caseId,
+                isolationLevel: iso,
+                id: simId,
+                firstName: simName || 'TEST_DATA',
+                lastName: 'Test',
+                courier: 'JNT',
+                vehicle: 'Motorcycle'
+            };
+
+            try {
+                const res = await fetch('/api/test/concurrency', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+
+                if (data.success && data.result) {
+                    tbody.innerHTML = ""; // Clear loader
+
+                    data.result.forEach(row => {
+                        const tr = document.createElement('tr');
+
+                        // Apply CSS classes based on Actor/Result
+                        if (row.actor === "T1") tr.className = "row-t1";
+                        else if (row.actor === "T2") tr.className = "row-t2";
+                        else if (row.actor === "ANALYSIS") tr.className = "row-res";
+                        else if (row.actor === "System") tr.className = "row-sys";
+                        else if (row.actor === "ERROR") tr.className = "row-err";
+
+                        tr.innerHTML = `
+                            <td>${row.time}</td>
+                            <td><strong>${row.actor}</strong></td>
+                            <td>${row.action}</td>
+                            <td>${row.details}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="4" class="row-err" style="text-align:center;">Error: ${e.message}</td></tr>`;
+            }
+        }
+
+        // --- CRUD FUNCTIONS ---
+
+        async function createRider() {
+            const payload = {
+                firstName: document.getElementById('r_first').value,
+                lastName: document.getElementById('r_last').value,
+                vehicleType: document.getElementById('r_vehicle').value,
+                courierName: document.getElementById('r_courier').value,
+                age: 25, gender: 'M'
+            };
+            if (!payload.firstName || !payload.lastName) return alert("Enter a name!");
+            setStatus("Creating...");
+            try {
+                const res = await fetch('/api/riders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (res.ok) {
+                    setStatus(`Created on ${json.writtenTo} ${json.fallback ? '(Fallback)' : ''}`);
+                    setTimeout(() => window.location.reload(), 1000);
+                }
+                else { setStatus("Error creating rider"); }
+            } catch (e) { setStatus("Error: " + e.message); }
+        }
+
+        async function deleteRider(id, courier) {
+            if (!confirm("Are you sure you want to delete ID " + id + "?")) return;
+            setStatus("Deleting...");
+            try {
+                const res = await fetch('/api/riders/' + id, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ courierName: courier })
+                });
+                if (res.ok) { setStatus("Deleted!"); window.location.reload(); }
+                else { setStatus("Error deleting"); }
+            } catch (e) { setStatus("Error: " + e.message); }
+        }
+
+        function editRider(id, first, last, vehicle, courier) {
+            document.getElementById('r_id').value = id;
+            document.getElementById('r_first').value = first;
+            document.getElementById('r_last').value = last;
+            document.getElementById('r_vehicle').value = vehicle;
+            document.getElementById('r_courier').value = courier;
+            document.getElementById('btn-add').style.display = 'none';
+            document.getElementById('btn-update').style.display = 'inline-block';
+            document.getElementById('btn-cancel').style.display = 'inline-block';
+        }
+
+        function resetForm() {
+            document.getElementById('r_id').value = '';
+            document.getElementById('r_first').value = '';
+            document.getElementById('r_last').value = '';
+            document.getElementById('r_vehicle').selectedIndex = 0;
+            document.getElementById('r_courier').selectedIndex = 0;
+            document.getElementById('r_courier').disabled = false;
+            document.getElementById('btn-add').style.display = 'inline-block';
+            document.getElementById('btn-update').style.display = 'none';
+            document.getElementById('btn-cancel').style.display = 'none';
+        }
+
+        async function submitUpdate() {
+            const id = document.getElementById('r_id').value;
+            const payload = {
+                firstName: document.getElementById('r_first').value,
+                lastName: document.getElementById('r_last').value,
+                vehicleType: document.getElementById('r_vehicle').value,
+                courierName: document.getElementById('r_courier').value
+            };
+            setStatus("Updating...");
+            try {
+                const res = await fetch('/api/riders/' + id, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) { setStatus("Updated!"); window.location.reload(); }
+                else { setStatus("Error updating"); }
+            } catch (e) { setStatus("Error: " + e.message); }
+        }
+
+        async function runRecovery() {
+            setStatus("Running Global Recovery...");
+            try {
+                const res = await fetch('/api/recovery', { method: 'POST' });
+                setStatus("Recovery Complete!");
+                setTimeout(() => window.location.reload(), 1500);
+            } catch (e) { setStatus("Error: " + e.message); }
+        }
+
+        // Init
+        fetchNodeStatus();
+    </script>
+</body>
+
+</html>

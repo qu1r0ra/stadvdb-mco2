@@ -1,20 +1,18 @@
 import sleep from "./sleep.js";
 
-/**
- * runTransaction
- * - pool: mysql2/promise pool
- * - cb: async callback receiving a connection (conn) to run queries
- * - maxAttempts: deadlock retry attempts (default 3 total attempts)
- */
-export async function runTransaction(pool, cb, maxAttempts = 3) {
+export async function runTransaction(pool, cb, isolationLevel = "REPEATABLE READ", maxAttempts = 3) {
   let attempt = 0;
 
   while (true) {
     const conn = await pool.getConnection();
     try {
-      // Ensure the required isolation level for the transaction
-      await conn.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+      await conn.query(`SET SESSION TRANSACTION ISOLATION LEVEL ${isolationLevel}`);
+
       await conn.beginTransaction();
+
+      //confirm level
+      const [vars] = await conn.query("SELECT @@transaction_isolation as level");
+      console.log(`[TX START] Level: ${vars[0].level} | TxID: ${Math.random().toString(36).substr(7)}`);
 
       const result = await cb(conn);
 
@@ -22,21 +20,20 @@ export async function runTransaction(pool, cb, maxAttempts = 3) {
       conn.release();
       return result;
     } catch (err) {
-      try {
-        await conn.rollback();
-      } catch (_) {}
+      try { await conn.rollback(); } catch (_) { }
       conn.release();
 
       attempt++;
-      const isDeadlock = err && (err.errno === 1213 || err.errno === 1205);
-      if (isDeadlock && attempt < maxAttempts) {
-        // exponential-ish backoff: 100ms, 200ms, 400ms...
-        const backoff = 100 * Math.pow(2, attempt - 1);
-        await sleep(backoff);
-        continue;
-      }
+      const isDeadlock = err && (err.errno === 1213 || err.errno === 1205); // Deadlock or Lock Wait Timeout
 
-      // rethrow for non-deadlock or exhausted attempts
+      if (isDeadlock) {
+        console.warn(`[TX DEADLOCK] Attempt ${attempt}/${maxAttempts}. Retrying...`);
+        if (attempt < maxAttempts) {
+          const backoff = 100 * Math.pow(2, attempt - 1);
+          await sleep(backoff);
+          continue;
+        }
+      }
       throw err;
     }
   }

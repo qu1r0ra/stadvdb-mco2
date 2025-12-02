@@ -51,7 +51,7 @@ Create and deploy a web application to simulate concurrency control and replicat
 distributed system. The application should be able to show two or more concurrently executing
 STADVDB – MCO2 Transactions Management 1
 
-transactions in two or more nodes and they all leave the database in a consistent state. Simulate
+transactions in two or more nodes and they all leave the database in a consistent state. Simulate
 concurrency and replication for each of the following three (3) cases and report the results:
 a. Case #1: Concurrent transactions in two or more nodes are reading the same data item.
 b. Case #2: At least one transaction in the three nodes is writing (update / deletion) and the
@@ -103,7 +103,7 @@ Prepare your documentation. Include all design decisions -- setting up the distr
 simulating the global concurrency, replication strategy, recovery strategy, test methods and results.
 STADVDB – MCO2 Transactions Management 2
 
-Technical Report
+Technical Report
 Use the prescribed template and follow the outline provided below to prepare your Technical Report. The
 Technical Report should be at least 4 pages and at most 10 pages excluding References and Appendix.
 1. Introduction.
@@ -444,7 +444,7 @@ recovers from failure
 
 STADVDB – MCO2 Transactions Management 7
 
-Analysis and
+Analysis and
 Discussion of
 Results
 
@@ -487,5 +487,3 @@ Non-compliance with prescribed template;
 Missing important references and citations
 
 STADVDB – MCO2 Transactions Management 8
-
-

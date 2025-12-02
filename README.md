@@ -120,7 +120,19 @@ Replication (pull-based, batch-driven, partition-filtered)
 
 ---
 
-## API Endpoints
+### Web Dashboard
+
+A comprehensive web interface is available at `http://localhost:3000` (default) to visualize and control the system.
+
+**Features:**
+
+- **Node Status Monitoring**: Real-time status of Node 1 (Master), Node 2 (JNT), and Node 3 (Others).
+- **Failure Simulation**: Toggle nodes ONLINE/OFFLINE to simulate crashes and network partitions.
+- **Concurrency Testing**: Run pre-defined transaction scenarios (Read-Read, Read-Write, Write-Write) with configurable Isolation Levels.
+- **Rider Management**: CRUD operations with automatic routing to the correct node.
+- **Global Recovery**: Trigger system-wide recovery and synchronization.
+
+### API Endpoints
 
 ### Riders
 
@@ -140,17 +152,25 @@ Replication (pull-based, batch-driven, partition-filtered)
 
 ### Replication Admin
 
-| Method | Route                          | Description       |
-| ------ | ------------------------------ | ----------------- |
-| GET    | /api/replication/pending/:node | List pending logs |
-| GET    | /api/replication/failed/:node  | List failed logs  |
-| POST   | /api/replication/retry-failed  | Retry failures    |
-| POST   | /api/replication/replicate     | Force sync pair   |
-| GET    | /api/replication/failover-status | Check failover status |
-| POST   | /api/replication/promote       | Manual failover (promote slaves) |
-| POST   | /api/replication/demote        | Manual recovery (demote slaves) |
-| POST   | /api/replication/cleanup       | Clear all tables and reset ID offsets (testing) |
-| GET    | /api/replication/consistency-check | Verify data consistency across nodes |
+| Method | Route                              | Description                                     |
+| ------ | ---------------------------------- | ----------------------------------------------- |
+| GET    | /api/replication/pending/:node     | List pending logs                               |
+| GET    | /api/replication/failed/:node      | List failed logs                                |
+| POST   | /api/replication/retry-failed      | Retry failures                                  |
+| POST   | /api/replication/replicate         | Force sync pair                                 |
+| GET    | /api/replication/failover-status   | Check failover status                           |
+| POST   | /api/replication/promote           | Manual failover (promote slaves)                |
+| POST   | /api/replication/demote            | Manual recovery (demote slaves)                 |
+| POST   | /api/replication/cleanup           | Clear all tables and reset ID offsets (testing) |
+| GET    | /api/replication/consistency-check | Verify data consistency across nodes            |
+
+### Simulation & Testing
+
+| Method | Route                 | Description                      |
+| ------ | --------------------- | -------------------------------- |
+| GET    | /api/test/node-status | Get status of all nodes          |
+| POST   | /api/test/node-status | Toggle node status (Kill/Revive) |
+| POST   | /api/test/concurrency | Run concurrency test cases       |
 
 ---
 
