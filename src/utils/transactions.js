@@ -6,9 +6,13 @@ export async function runTransaction(pool, cb, isolationLevel = "REPEATABLE READ
   while (true) {
     const conn = await pool.getConnection();
     try {
-      // Set dynamic isolation level
       await conn.query(`SET SESSION TRANSACTION ISOLATION LEVEL ${isolationLevel}`);
+
       await conn.beginTransaction();
+
+      //confirm level
+      const [vars] = await conn.query("SELECT @@transaction_isolation as level");
+      console.log(`[TX START] Level: ${vars[0].level} | TxID: ${Math.random().toString(36).substr(7)}`);
 
       const result = await cb(conn);
 
@@ -20,12 +24,15 @@ export async function runTransaction(pool, cb, isolationLevel = "REPEATABLE READ
       conn.release();
 
       attempt++;
-      // Retry on deadlock
-      const isDeadlock = err && (err.errno === 1213 || err.errno === 1205);
-      if (isDeadlock && attempt < maxAttempts) {
-        const backoff = 100 * Math.pow(2, attempt - 1);
-        await sleep(backoff);
-        continue;
+      const isDeadlock = err && (err.errno === 1213 || err.errno === 1205); // Deadlock or Lock Wait Timeout
+
+      if (isDeadlock) {
+        console.warn(`[TX DEADLOCK] Attempt ${attempt}/${maxAttempts}. Retrying...`);
+        if (attempt < maxAttempts) {
+          const backoff = 100 * Math.pow(2, attempt - 1);
+          await sleep(backoff);
+          continue;
+        }
       }
       throw err;
     }
