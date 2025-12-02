@@ -35,11 +35,11 @@ This project implements a **3-node distributed database** for a logistics system
 
 ### Data Distribution
 
-| Node | Contents | Fragmentation Rule |
-|------|----------|-------------------|
-| **Node 1 (Primary)** | All riders | Full dataset |
-| **Node 2 (JNT Fragment)** | JNT riders only | `courierName = 'JNT'` |
-| **Node 3 (Others Fragment)** | Non-JNT riders | `courierName IN ('LBCD', 'FEDEZ')` |
+| Node                         | Contents        | Fragmentation Rule                 |
+| ---------------------------- | --------------- | ---------------------------------- |
+| **Node 1 (Primary)**         | All riders      | Full dataset                       |
+| **Node 2 (JNT Fragment)**    | JNT riders only | `courierName = 'JNT'`              |
+| **Node 3 (Others Fragment)** | Non-JNT riders  | `courierName IN ('LBCD', 'FEDEZ')` |
 
 ### ID Range Partitioning
 
@@ -134,20 +134,24 @@ See `ARCHITECTURE.md` for detailed technical design.
 The unified dashboard (accessible at `/`) provides:
 
 ### Node Status Monitoring
+
 - Real-time display of ONLINE/OFFLINE status for all 3 nodes
 - Visual indicators showing which node is currently accepting writes
 
 ### Failure Simulation
+
 - **Kill/Revive Buttons**: Toggle node status to simulate crashes
 - Instantly test failover behavior without touching infrastructure
 - Demonstrates automatic routing to fragment nodes
 
 ### Rider Management
+
 - **Add Rider**: Form auto-routes to correct node based on courier
 - **Edit/Delete**: Update operations with fallback logic
 - **3-Column View**: See how data distributes across nodes in real-time
 
 ### Concurrency Testing
+
 - Run pre-defined test cases:
   - **Case 1**: Concurrent Reads (dirty read check)
   - **Case 2**: Read + Write (phantom read check)
@@ -156,6 +160,7 @@ The unified dashboard (accessible at `/`) provides:
 - View detailed event logs showing transaction timelines
 
 ### Global Recovery
+
 - **Manual Sync Trigger**: Run full bidirectional replication
 - Recovery report showing logs applied and any errors
 
@@ -165,12 +170,12 @@ The unified dashboard (accessible at `/`) provides:
 
 ### Riders (CRUD)
 
-| Method | Route | Description |
-|--------|-------|-------------|
-| GET | `/api/riders` | Fetch all riders (prefers Node 1, fallback to merge) |
-| POST | `/api/riders` | Insert rider (tries Node 1 → fallback to fragment) |
-| PUT | `/api/riders/:id` | Update rider by ID |
-| DELETE | `/api/riders/:id` | Delete rider by ID |
+| Method | Route             | Description                                          |
+| ------ | ----------------- | ---------------------------------------------------- |
+| GET    | `/api/riders`     | Fetch all riders (prefers Node 1, fallback to merge) |
+| POST   | `/api/riders`     | Insert rider (tries Node 1 → fallback to fragment)   |
+| PUT    | `/api/riders/:id` | Update rider by ID                                   |
+| DELETE | `/api/riders/:id` | Delete rider by ID                                   |
 
 **Example: Insert Rider**
 
@@ -189,13 +194,13 @@ curl -X POST http://localhost:3000/api/riders \
 
 ### Recovery & Replication
 
-| Method | Route | Description |
-|--------|-------|-------------|
-| POST | `/api/recovery` | Full bidirectional sync (node1↔node2, node1↔node3) |
-| POST | `/api/replication/replicate` | Sync specific pair: `{source, target}` |
-| GET | `/api/replication/pending/:node` | List pending logs on a node |
-| GET | `/api/replication/failed/:node` | List failed logs on a node |
-| POST | `/api/replication/retry-failed` | Retry failed logs: `{source, target}` |
+| Method | Route                            | Description                                        |
+| ------ | -------------------------------- | -------------------------------------------------- |
+| POST   | `/api/recovery`                  | Full bidirectional sync (node1↔node2, node1↔node3) |
+| POST   | `/api/replication/replicate`     | Sync specific pair: `{source, target}`             |
+| GET    | `/api/replication/pending/:node` | List pending logs on a node                        |
+| GET    | `/api/replication/failed/:node`  | List failed logs on a node                         |
+| POST   | `/api/replication/retry-failed`  | Retry failed logs: `{source, target}`              |
 
 **Example: Trigger Full Recovery**
 
@@ -213,11 +218,11 @@ curl -X POST http://localhost:3000/api/replication/replicate \
 
 ### Simulation & Testing
 
-| Method | Route | Description |
-|--------|-------|-------------|
-| GET | `/api/test/node-status` | Get current status of all nodes |
-| POST | `/api/test/node-status` | Toggle node status: `{node, status}` |
-| POST | `/api/test/concurrency` | Run concurrency test: `{caseId, isolationLevel, ...}` |
+| Method | Route                   | Description                                           |
+| ------ | ----------------------- | ----------------------------------------------------- |
+| GET    | `/api/test/node-status` | Get current status of all nodes                       |
+| POST   | `/api/test/node-status` | Toggle node status: `{node, status}`                  |
+| POST   | `/api/test/concurrency` | Run concurrency test: `{caseId, isolationLevel, ...}` |
 
 **Example: Simulate Node 1 Failure**
 
@@ -288,10 +293,10 @@ The system includes built-in concurrency tests to validate isolation levels:
 
 ### Test Cases
 
-| Case | Scenario | What It Tests |
-|------|----------|---------------|
-| **1: Read-Read** | T1 UPDATE (rollback), T2 SELECT | Dirty reads |
-| **2: Read-Write** | T1 SELECT count, T2 INSERT | Phantom reads |
+| Case               | Scenario                        | What It Tests         |
+| ------------------ | ------------------------------- | --------------------- |
+| **1: Read-Read**   | T1 UPDATE (rollback), T2 SELECT | Dirty reads           |
+| **2: Read-Write**  | T1 SELECT count, T2 INSERT      | Phantom reads         |
 | **3: Write-Write** | T1 UPDATE, T2 UPDATE (same row) | Locking/serialization |
 
 ### Running Tests via Dashboard

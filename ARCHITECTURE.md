@@ -109,10 +109,10 @@ CREATE TABLE ReplicationErrors (
 
 ### 4.2 Data Distribution
 
-| Node | Contents | Fragmentation Rule |
-|------|----------|-------------------|
-| **Node 1** | All riders | None (full dataset) |
-| **Node 2** | JNT riders only | `WHERE courierName = 'JNT'` |
+| Node       | Contents         | Fragmentation Rule                       |
+| ---------- | ---------------- | ---------------------------------------- |
+| **Node 1** | All riders       | None (full dataset)                      |
+| **Node 2** | JNT riders only  | `WHERE courierName = 'JNT'`              |
 | **Node 3** | All other riders | `WHERE courierName IN ('LBCD', 'FEDEZ')` |
 
 ### 4.3 ID Range Partitioning
@@ -147,7 +147,7 @@ Configured via `ALTER TABLE Riders AUTO_INCREMENT = [offset];`
 
 ```javascript
 export async function insertRider(data) {
-  const fragment = getFragment(data.courierName);  // JNT → node2, else → node3
+  const fragment = getFragment(data.courierName); // JNT → node2, else → node3
 
   try {
     return await runTransaction(nodes.node1.pool, async (conn) => {
@@ -188,6 +188,7 @@ Replication is **not automatic**. It must be manually triggered via API:
 ### 6.3 Partition Filtering
 
 When replicating from Node 1 to Node 2/3:
+
 - **Node 2**: Only apply logs where `courierName = 'JNT'`
 - **Node 3**: Only apply logs where `courierName != 'JNT'`
 
@@ -211,9 +212,9 @@ Instead of actually killing database servers, we **wrap connection pools** with 
 
 ```javascript
 export const nodeStatus = {
-  node1: true,  // ONLINE
+  node1: true, // ONLINE
   node2: true,
-  node3: true
+  node3: true,
 };
 
 pool.getConnection = async () => {
@@ -226,13 +227,14 @@ pool.getConnection = async () => {
 
 ### 7.2 Simulation Endpoints
 
-| Method | Route | Body | Effect |
-|--------|-------|------|--------|
-| POST | /api/test/node-status | `{node: "node1", status: false}` | "Kill" Node 1 |
-| POST | /api/test/node-status | `{node: "node1", status: true}` | "Revive" Node 1 |
-| GET | /api/test/node-status | - | Get current status |
+| Method | Route                 | Body                             | Effect             |
+| ------ | --------------------- | -------------------------------- | ------------------ |
+| POST   | /api/test/node-status | `{node: "node1", status: false}` | "Kill" Node 1      |
+| POST   | /api/test/node-status | `{node: "node1", status: true}`  | "Revive" Node 1    |
+| GET    | /api/test/node-status | -                                | Get current status |
 
 When `nodeStatus.node1 = false`:
+
 - All queries to Node 1 throw `Connection refused` error
 - `ridersService.js` catches error → routes to fragment
 - Perfect for demonstrating failover without infrastructure access!
@@ -244,6 +246,7 @@ When `nodeStatus.node1 = false`:
 ### 8.1 Isolation Level
 
 All transactions run under **REPEATABLE READ**:
+
 ```javascript
 await conn.query(`SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ`);
 ```
@@ -251,13 +254,19 @@ await conn.query(`SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ`);
 ### 8.2 Deadlock Retry (transactions.js)
 
 ```javascript
-export async function runTransaction(pool, cb, isoLevel = "REPEATABLE READ", maxAttempts = 3) {
+export async function runTransaction(
+  pool,
+  cb,
+  isoLevel = "REPEATABLE READ",
+  maxAttempts = 3
+) {
   while (attempt < maxAttempts) {
     try {
       // BEGIN, execute cb, COMMIT
     } catch (err) {
-      if (err.errno === 1213 || err.errno === 1205) {  // Deadlock or Lock Wait
-        await sleep(100 * Math.pow(2, attempt));  // Exponential backoff
+      if (err.errno === 1213 || err.errno === 1205) {
+        // Deadlock or Lock Wait
+        await sleep(100 * Math.pow(2, attempt)); // Exponential backoff
         continue;
       }
       throw err;
@@ -270,11 +279,11 @@ export async function runTransaction(pool, cb, isoLevel = "REPEATABLE READ", max
 
 Three test cases implemented:
 
-| Case | Description | Purpose |
-|------|-------------|---------|
-| **Case 1: Read-Read** | Two concurrent SELECT queries | Test dirty read isolation |
-| **Case 2: Read-Write** | One SELECT + one INSERT (concurrent) | Test phantom reads |
-| **Case 3: Write-Write** | Two concurrent UPDATEs on same row | Test locking/serialization |
+| Case                    | Description                          | Purpose                    |
+| ----------------------- | ------------------------------------ | -------------------------- |
+| **Case 1: Read-Read**   | Two concurrent SELECT queries        | Test dirty read isolation  |
+| **Case 2: Read-Write**  | One SELECT + one INSERT (concurrent) | Test phantom reads         |
+| **Case 3: Write-Write** | Two concurrent UPDATEs on same row   | Test locking/serialization |
 
 Tests use `sleep()` to force transaction overlap and log precise event timings.
 
@@ -296,7 +305,7 @@ app.get("/", async (req, res) => {
   const [node1Data, node2Data, node3Data] = await Promise.all([
     getRidersFromNode("node1"),
     getRidersFromNode("node2"),
-    getRidersFromNode("node3")
+    getRidersFromNode("node3"),
   ]);
 
   res.render("dashboard", { node1, node2, node3 });
@@ -317,30 +326,30 @@ app.get("/", async (req, res) => {
 
 ### Riders (CRUD)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | /api/riders | Fetch all riders |
-| POST | /api/riders | Insert rider (tries Node 1 → fallback) |
-| PUT | /api/riders/:id | Update rider |
-| DELETE | /api/riders/:id | Delete rider |
+| Method | Endpoint        | Description                            |
+| ------ | --------------- | -------------------------------------- |
+| GET    | /api/riders     | Fetch all riders                       |
+| POST   | /api/riders     | Insert rider (tries Node 1 → fallback) |
+| PUT    | /api/riders/:id | Update rider                           |
+| DELETE | /api/riders/:id | Delete rider                           |
 
 ### Recovery & Replication
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | /api/recovery | Full bidirectional sync (node1↔node2, node1↔node3) |
-| POST | /api/replication/replicate | Sync specific pair: `{source, target}` |
-| GET | /api/replication/pending/:node | List pending logs |
-| GET | /api/replication/failed/:node | List failed logs |
-| POST | /api/replication/retry-failed | Retry failed logs: `{source, target}` |
+| Method | Endpoint                       | Description                                        |
+| ------ | ------------------------------ | -------------------------------------------------- |
+| POST   | /api/recovery                  | Full bidirectional sync (node1↔node2, node1↔node3) |
+| POST   | /api/replication/replicate     | Sync specific pair: `{source, target}`             |
+| GET    | /api/replication/pending/:node | List pending logs                                  |
+| GET    | /api/replication/failed/:node  | List failed logs                                   |
+| POST   | /api/replication/retry-failed  | Retry failed logs: `{source, target}`              |
 
 ### Testing & Simulation
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | /api/test/node-status | Get current node status |
-| POST | /api/test/node-status | Toggle status: `{node, status}` |
-| POST | /api/test/concurrency | Run test: `{caseId, isolationLevel, ...options}` |
+| Method | Endpoint              | Description                                      |
+| ------ | --------------------- | ------------------------------------------------ |
+| GET    | /api/test/node-status | Get current node status                          |
+| POST   | /api/test/node-status | Toggle status: `{node, status}`                  |
+| POST   | /api/test/concurrency | Run test: `{caseId, isolationLevel, ...options}` |
 
 ---
 
@@ -368,11 +377,11 @@ app.get("/", async (req, res) => {
 
 ## 12. Guarantees
 
-- - **No Lost Updates**: ACID transactions ensure durability
-- - **No Write Conflicts**: Partition rules prevent concurrent writes to same record
-- - **Idempotent Replication**: Logs can be applied multiple times safely
-- - **Automatic Deadlock Recovery**: Up to 3 retries with exponential backoff
-- - **Eventually Consistent**: Manual sync restores consistency after failures
+- **No Lost Updates**: ACID transactions ensure durability
+- **No Write Conflicts**: Partition rules prevent concurrent writes to same record
+- **Idempotent Replication**: Logs can be applied multiple times safely
+- **Automatic Deadlock Recovery**: Up to 3 retries with exponential backoff
+- **Eventually Consistent**: Manual sync restores consistency after failures
 
 ---
 
