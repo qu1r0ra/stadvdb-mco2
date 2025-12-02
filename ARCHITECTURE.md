@@ -1,368 +1,390 @@
 # Project Architecture
 
-## 1. Overview
+## 1. System Overview
 
-This system implements a **fault-tolerant master-slave distributed database** with:
+This system implements a **distributed database for logistics rider management** with:
 
-- **Master-slave replication** with automatic failover
-- **Concurrent multi-user access** with REPEATABLE READ isolation
-- **Application-level write-ahead logging** for durability
-- **Automatic health monitoring** and failure detection
-- **Partition-aware failover** (JNT vs. non-JNT couriers)
-- **Automatic deadlock handling** with exponential backoff
-- **Eventually consistent recovery** with catch-up synchronization
-
-The platform consists of:
-
-- **Backend**: Node.js (v20.18.0+) + Express + MySQL2
-- **Data storage**: Three remote MySQL 8.0 VMs
-- **Node roles**:
-  - **Node 1 (Master)**: Handles ALL writes during normal operation, primary read node
-  - **Node 2 (Slave)**: Read-only replica, promoted to master for JNT writes during Node 1 failure
-  - **Node 3 (Slave)**: Read-only replica, promoted to master for non-JNT writes during Node 1 failure
-- **Replication model**: Unidirectional (master → slaves) during normal operation, bidirectional during recovery
+- **3-Node Architecture**: 1 primary node (Node 1) + 2 fragment nodes (Node 2, Node 3)
+- **Horizontal Fragmentation**: Data partitioned by `courierName` (JNT vs Others)
+- **Master-First Failover Strategy**: Try Node 1 first, fallback to appropriate fragment on failure
+- **Application-Level Replication**: Write-ahead logging with manual pull-based synchronization
+- **Simulated Failure Testing**: Connection proxy allows instant node "crash" simulation
+- **Concurrency Control**: REPEATABLE READ isolation with automatic deadlock retry
 
 ---
 
-## 2. Concurrency Model
+## 2. Technology Stack
 
-### 2.1 Isolation Level
-
-All transactions run under **REPEATABLE READ**. This is explicitly set per transaction.
-
-### 2.2 Deadlock Strategy
-
-- **Two retries** using exponential backoff
-- Backoff: 100ms → 200ms → fail
-- Third attempt fails immediately
-
-### System Components
-
-- **`/services`** — Business logic (CRUD operations, replication, recovery, simulation)
-- **`/routes`** — Express API endpoints (riders, recovery, replication admin, test)
-- **`/utils`** — Transaction manager, logging utilities, helper functions
-- **`/views`** — EJS templates for the web dashboard
-- **`/public`** — Static assets (CSS, client-side JS)
-- **`/scripts`** — Database initialization and test suite
-- **`/tests`** — Integration test suite
-- **`/sql`** — Schema definitions, triggers (deprecated), misc utilities
-
-### 2.3 Transaction Management
-
-All writes use `runTransaction(pool, cb)`.
-
-Responsible for:
-
-- Setting isolation level
-- Starting/committing/rolling back transactions
-- Handling deadlocks
-- Ensuring cleanup
-
-### 2.4 No SQL-Level Locks
-
-System relies on:
-
-- MVCC
-- InnoDB row-level locks
-- Snapshot isolation
-
-No SERIALIZABLE or explicit table locking.
+- **Backend**: Node.js 20.18.0 + Express 5.1.0
+- **Database**: MySQL 8.x (3 remote instances)
+- **Frontend**: Server-side rendering with EJS templates
+- **Key Libraries**:
+  - `mysql2` - Database driver with promise support
+  - `uuid` - Transaction ID generation
+  - `dotenv` - Environment configuration
+  - `body-parser` - JSON request parsing
 
 ---
 
-## 3. Logging Architecture
+## 3. System Components
 
-### 3.1 Removal of Triggers
+### 3.1 Directory Structure
 
-Triggers removed because:
+```
+/src
+├── /config
+│   └── db.js                 # Connection pools + failure simulation proxy
+├── /routes
+│   ├── riders.js             # CRUD endpoints for rider management
+│   ├── recovery.js           # Manual recovery trigger
+│   ├── replication.js        # Replication admin endpoints
+│   └── testRouter.js         # Simulation controls (node status, concurrency tests)
+├── /services
+│   ├── ridersService.js      # Business logic with try-catch fallback
+│   ├── recoveryService.js    # Pull-based replication + retry logic
+│   └── simulationService.js  # Concurrency test cases (1-3)
+├── /utils
+│   ├── transactions.js       # Transaction wrapper with deadlock retry
+│   ├── applyLog.js           # Idempotent log application logic
+│   ├── logger.js             # Logging utilities
+│   └── sleep.js              # Async delay helper
+└── server.js                 # Express app entry point
 
-- They cannot coordinate multi-node replication
-- Hidden writes complicate replication ordering
-- Impossible to atomically batch app logic + triggers across nodes
+/views
+└── dashboard.ejs             # Main UI template (3-column node display)
 
-### 3.2 Application-Level Logging
+/public
+└── style.css                 # Dashboard CSS
 
-Every write creates one log entry:
-
-| Column    | Meaning                   |
-| --------- | ------------------------- |
-| id        | sequential log id         |
-| tx_id     | per-client transaction id |
-| node_name | origin of write           |
-| action    | INSERT/UPDATE/DELETE      |
-| rider_id  | PK target                 |
-| old_value | JSON before               |
-| new_value | JSON after                |
-| status    | pending/replicated/failed |
-| timestamp | creation time             |
-
-Logs are **atomic** with main writes.
-
-### 3.3 No Read Logging
-
-Reads do not mutate state → no need to log.
+/sql
+├── schema.sql                # Database schema (Riders, Logs, ReplicationErrors)
+└── misc.sql                  # ID range offset configuration
+```
 
 ---
 
-## 4. Replication Architecture
+## 4. Database Architecture
 
-### 4.1 Normal Operation (Node 1 = Master)
+### 4.1 Schema
 
-Replication is **on-demand** and **manually triggered** via API endpoints:
+```sql
+-- Riders: Main data table (identical on all 3 nodes)
+CREATE TABLE Riders (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  courierName ENUM('JNT', 'LBCD', 'FEDEZ'),
+  vehicleType ENUM('Motorcycle', 'Bicycle', 'Tricycle', 'Car'),
+  firstName VARCHAR(50),
+  lastName VARCHAR(50),
+  gender VARCHAR(10),
+  age INT,
+  createdAt DATETIME,
+  updatedAt DATETIME
+);
+
+-- Logs: Application-level write-ahead log
+CREATE TABLE Logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tx_id VARCHAR(50),
+  node_name ENUM('node1','node2','node3'),
+  action ENUM('INSERT','UPDATE','DELETE'),
+  rider_id INT,
+  old_value JSON,
+  new_value JSON,
+  status ENUM('pending','replicated','failed'),
+  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ReplicationErrors: Diagnostic table for failed replication
+CREATE TABLE ReplicationErrors (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  log_id INT,
+  source_node ENUM('node1','node2','node3'),
+  target_node ENUM('node1','node3','node3'),
+  attempts INT,
+  last_error TEXT,
+  last_error_time DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### 4.2 Data Distribution
+
+| Node       | Contents         | Fragmentation Rule                       |
+| ---------- | ---------------- | ---------------------------------------- |
+| **Node 1** | All riders       | None (full dataset)                      |
+| **Node 2** | JNT riders only  | `WHERE courierName = 'JNT'`              |
+| **Node 3** | All other riders | `WHERE courierName IN ('LBCD', 'FEDEZ')` |
+
+### 4.3 ID Range Partitioning
+
+To prevent primary key collisions during failover:
+
+- **Node 1**: AUTO_INCREMENT starts at 1 (range: 1 - 999,999)
+- **Node 2**: AUTO_INCREMENT starts at 1,000,000 (range: 1M - 1.999M)
+- **Node 3**: AUTO_INCREMENT starts at 2,000,000 (range: 2M - 2.999M)
+
+Configured via `ALTER TABLE Riders AUTO_INCREMENT = [offset];`
+
+---
+
+## 5. Write Strategy (Master-First with Fallback)
+
+### 5.1 Normal Operation Flow
+
+1. **Client sends write request** (INSERT/UPDATE/DELETE)
+2. **ridersService.js tries Node 1** inside `try { }` block:
+   - BEGIN TRANSACTION
+   - Execute SQL operation
+   - INSERT log entry into `Logs` table
+   - COMMIT
+3. **On success**: Return `{id, txId, writtenTo: "node1"}`
+4. **On failure** (`catch` block):
+   - Determine fragment: JNT → Node 2, Others → Node 3
+   - Retry write on fragment with ID range offset
+   - Return `{id, txId, writtenTo: "node2|node3", fallback: true}`
+
+### 5.2 Implementation (ridersService.js)
+
+```javascript
+export async function insertRider(data) {
+  const fragment = getFragment(data.courierName); // JNT → node2, else → node3
+
+  try {
+    return await runTransaction(nodes.node1.pool, async (conn) => {
+      // Write to Node 1 + create log
+    });
+  } catch (err) {
+    // FALLBACK to fragment
+    return await runTransaction(fragment.pool, async (conn) => {
+      // Write to Node 2/3 + create log
+    });
+  }
+}
+```
+
+---
+
+## 6. Replication Architecture
+
+### 6.1 Pull-Based Manual Replication
+
+Replication is **not automatic**. It must be manually triggered via API:
+
 - `POST /api/replication/replicate` - Sync specific pair (source/target)
-- `POST /api/recovery` - Run full bidirectional sync (node1 ↔ node2, node1 ↔ node3)
+- `POST /api/recovery` - Full bidirectional sync (node1↔node2, node1↔node3)
 
-Batch-based (100 logs per sync).
+### 6.2 Replication Process (recoveryService.js)
 
-### 4.2 Failover Mode (Node 1 Down)
+```
+1. GET pending logs from source node (status = 'pending')
+2. For each log:
+   a. Try to apply log to target (up to 3 attempts with exponential backoff)
+   b. On success: UPDATE Logs SET status='replicated'
+   c. On failure: UPDATE Logs SET status='failed' + INSERT ReplicationErrors
+3. Process in batches of 100 logs
+4. Return summary report
+```
 
-**Automatic Failover Trigger:**
-- Health check detects Node 1 unavailable (every 5 seconds)
-- Node 2 and Node 3 automatically promote to masters
+### 6.3 Partition Filtering
 
-- Node2 handles JNT exclusively
-- Node3 handles others exclusively
-- Node1 aggregates but does not originate partition-specific writes during normal operation
+When replicating from Node 1 to Node 2/3:
 
-No rider can be modified by two writer nodes simultaneously.
+- **Node 2**: Only apply logs where `courierName = 'JNT'`
+- **Node 3**: Only apply logs where `courierName != 'JNT'`
 
-### 4.3 Recovery Mode (Node 1 Returns)
+Filtering happens in `applyLogToNode()` logic (not shown in simplified schema).
 
-When triggered (manually via API):
-1. Fetch pending logs (`status = 'pending'`)
-2. Apply sequentially
-3. On success: mark `replicated`
-4. On failure: mark `failed` and stop
+### 6.4 Idempotent Log Application
 
-**Manual Demotion Fallback:**
-- If automatic demotion fails, use `POST /api/failover/demote`
-- Allows manual control in edge cases
+- **INSERT**: Uses `REPLACE INTO` (safe for re-application)
+- **UPDATE**: Applies full JSON snapshot
+- **DELETE**: Removes by `id`
 
-### 4.4 Idempotent Application
-
-`applyLogToNode` ensures safe retries and recovery:
-
-- **INSERT**: Uses `REPLACE INTO` (upsert by primary key)
-- **UPDATE**: Applies full row snapshot (deterministic)
-- **DELETE**: Removes by primary key only
-
-All operations are **idempotent** and can be safely replayed during recovery.
-
-### 4.5 Failed Log Handling
-
-- Stored as `status = 'failed'` in source node's Logs table
-- Diagnostic details recorded in `ReplicationErrors` table
-- Manual retry available via `/api/replication/retry-failed` endpoint
-- Batch processing halts on first failure to maintain ordering
+All operations are safe to retry!
 
 ---
 
-## 5. Fault Tolerance & High Availability
+## 7. Failure Simulation Architecture
 
-### 5.1 Health Monitoring
+### 7.1 Connection Proxy (db.js)
 
-**Health Check Mechanism:**
-- Periodic health checks every 5 seconds
-- Checks database connectivity: `SELECT 1` query
-- Tracks Node 1 availability status
+Instead of actually killing database servers, we **wrap connection pools** with a Proxy:
 
-**Failure Detection:**
-- 3 consecutive failed health checks → Node 1 considered down
-- Triggers automatic failover to Node 2/3
+```javascript
+export const nodeStatus = {
+  node1: true, // ONLINE
+  node2: true,
+  node3: true,
+};
 
-### 5.2 Failover Guarantees
+pool.getConnection = async () => {
+  if (nodeStatus[nodeKey] === false) {
+    throw new Error(`Connection refused: ${nodeKey} is offline (Simulated)`);
+  }
+  return originalGetConnection();
+};
+```
 
-**Write Availability:**
-- Normal operation: 100% (Node 1 handles all writes)
-- Node 1 failure: Partial (Node 2 for JNT, Node 3 for non-JNT)
-- Node 2 failure: 100% (Node 1 handles all writes)
-- Node 3 failure: 100% (Node 1 handles all writes)
+### 7.2 Simulation Endpoints
 
-**Read Availability:**
-- Normal operation: Node 1 (primary), fallback to Node 2/3
-- Node 1 failure: Route by partition (Node 2 for JNT, Node 3 for non-JNT)
+| Method | Route                 | Body                             | Effect             |
+| ------ | --------------------- | -------------------------------- | ------------------ |
+| POST   | /api/test/node-status | `{node: "node1", status: false}` | "Kill" Node 1      |
+| POST   | /api/test/node-status | `{node: "node1", status: true}`  | "Revive" Node 1    |
+| GET    | /api/test/node-status | -                                | Get current status |
 
-### 5.3 Split-Brain Mitigation
+When `nodeStatus.node1 = false`:
 
-**Known Limitation:**
-- Network partitions not handled (acceptable for academic project)
-- Assumes stable network connectivity
-
-**Conflict Resolution:**
-- Uses Last-Write-Wins (LWW) based on log timestamps
-- Simpler than quorum/fencing mechanisms
-- Documented as future enhancement
-
----
-
-## 6. Fault-Tolerance Model
-
-### 6.1 Normal Operation
-
-- All writes **try Node 1 first** (master)
-- On success, log is created for async replication (manual trigger)
-- Reads prefer Node1, fallback to merged Node2+Node3
-
-### 6.2 Node1 Failure (Simulated)
-
-- Connection to Node 1 throws error (via `nodeStatus` proxy)
-- `ridersService.js` catches error and immediately routes to:
-  - Node 2 (if `courierName === 'JNT'`)
-  - Node 3 (if `courierName !== 'JNT'`)
-- Write succeeds with ID range 1M+ (Node 2) or 2M+ (Node 3)
-- Log is created on the fragment node for later sync back to Node 1
-
-### 6.3 Recovery
-
-- When Node 1 "comes back" (via `POST /api/test/node-status` with `status: true`)
-- Manual trigger of `POST /api/recovery` syncs:
-  - Node 2 → Node 1 (missed JNT logs)
-  - Node 3 → Node 1 (missed Other logs)
-- Node 1 → Node 2/3 (any logs created on Node 1 during recovery)
-
-### 6.4 Safety Guarantee
-
-No conflicting writes due to:
-- Partition rules (JNT vs Others)
-- ID range partitioning (prevents collisions)
-- Try-catch routing (deterministic destination)
+- All queries to Node 1 throw `Connection refused` error
+- `ridersService.js` catches error → routes to fragment
+- Perfect for demonstrating failover without infrastructure access!
 
 ---
 
-## 6. API Overview
+## 8. Concurrency Control
 
-### `/riders`
+### 8.1 Isolation Level
 
-**Normal Operation (Node 1 = Master):**
-- All writes routed to Node 1
-- Reads from Node 1 (primary), fallback to Node 2+3 merge
+All transactions run under **REPEATABLE READ**:
 
-**Failover Mode (Node 1 Down):**
-- Writes routed by courier: JNT → Node 2, others → Node 3
-- Reads routed by courier: JNT → Node 2, others → Node 3
+```javascript
+await conn.query(`SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ`);
+```
 
-### `/recovery`
+### 8.2 Deadlock Retry (transactions.js)
 
-Triggers synchronization:
-- Normal: Node 1 → Node 2/3 (unidirectional)
-- Recovery: Node 2/3 → Node 1 (catch-up)
+```javascript
+export async function runTransaction(
+  pool,
+  cb,
+  isoLevel = "REPEATABLE READ",
+  maxAttempts = 3
+) {
+  while (attempt < maxAttempts) {
+    try {
+      // BEGIN, execute cb, COMMIT
+    } catch (err) {
+      if (err.errno === 1213 || err.errno === 1205) {
+        // Deadlock or Lock Wait
+        await sleep(100 * Math.pow(2, attempt)); // Exponential backoff
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+```
 
-### `/replication`
+### 8.3 Concurrency Testing (simulationService.js)
 
-Admin tools:
-- Monitor pending/failed logs
-- Retry failed replications
-- Force synchronization
+Three test cases implemented:
 
-### `/failover` (New)
+| Case                    | Description                          | Purpose                    |
+| ----------------------- | ------------------------------------ | -------------------------- |
+| **Case 1: Read-Read**   | Two concurrent SELECT queries        | Test dirty read isolation  |
+| **Case 2: Read-Write**  | One SELECT + one INSERT (concurrent) | Test phantom reads         |
+| **Case 3: Write-Write** | Two concurrent UPDATEs on same row   | Test locking/serialization |
 
-**Manual failover control:**
-- `POST /api/replication/promote` - Manually promote Node 2/3 to masters
-- `POST /api/replication/demote` - Manually demote Node 2/3 to slaves
-- `GET /api/replication/failover-status` - Check current master/slave status
+Tests use `sleep()` to force transaction overlap and log precise event timings.
 
-### `/testing` (New)
-
-**Testing utilities:**
-- `POST /api/replication/cleanup` - Clear all tables and reset AUTO_INCREMENT offsets
-- `GET /api/replication/consistency-check` - Verify Node 1 data matches Node 2+3 combined
-
----
-
-## 7. ID Range Partitioning
-
-### 7.1 Problem: Auto-Increment Collisions
-
-During failover, Node 2 and Node 3 operate independently and may assign the same IDs to different riders, causing conflicts when Node 1 recovers.
-
-### 7.2 Solution: Range-Based Partitioning
-
-Each node uses a distinct AUTO_INCREMENT offset:
-
-- **Node 1**: 1 - 999,999
-- **Node 2**: 1,000,000 - 1,999,999
-- **Node 3**: 2,000,000 - 2,999,999
-
-**Implementation**: During cleanup, `ALTER TABLE Riders AUTO_INCREMENT = <offset>` is executed on each node.
-
-**Benefits**:
-- Zero application code changes
-- Globally unique IDs across all nodes
-- No coordination overhead
-- 1 million IDs per node (sufficient for typical workloads)
-
-### `/failover` (New)
-
-**Manual failover control:**
-- `POST /api/replication/promote` - Manually promote Node 2/3 to masters
-- `POST /api/replication/demote` - Manually demote Node 2/3 to slaves
-- `GET /api/replication/failover-status` - Check current master/slave status
-
-### `/testing` (New)
-
-**Testing utilities:**
-- `POST /api/replication/cleanup` - Clear all tables and reset AUTO_INCREMENT offsets
-- `GET /api/replication/consistency-check` - Verify Node 1 data matches Node 2+3 combined
+Triggered via: `POST /api/test/concurrency`
 
 ---
 
-## 8. Simulation Architecture
+## 9. Frontend Architecture
 
-To meet the project requirements for demonstrating failure recovery and concurrency control without physical hardware manipulation, we implemented a simulation layer.
+### 9.1 Server-Side Rendering
 
-### 8.1 Connection Proxy (`src/config/db.js`)
+- **Template Engine**: EJS
+- **Entry Point**: `server.js` → `GET /` route
+- **Data Fetching**: Parallel calls to all 3 nodes
+- **Rendering**: Single dashboard view with 3-column layout
 
-We wrap the MySQL connection pools with a custom Proxy. This allows us to intercept every `getConnection` and `query` call.
+```javascript
+app.get("/", async (req, res) => {
+  const [node1Data, node2Data, node3Data] = await Promise.all([
+    getRidersFromNode("node1"),
+    getRidersFromNode("node2"),
+    getRidersFromNode("node3"),
+  ]);
 
-- **Mechanism**: A global `nodeStatus` object tracks the state (ONLINE/OFFLINE) of each node.
-- **Interception**: Before executing any query, the proxy checks `nodeStatus`.
-- **Simulation**: If a node is marked OFFLINE, the proxy throws a `Connection refused` error, mimicking a real network or server failure.
+  res.render("dashboard", { node1, node2, node3 });
+});
+```
 
-### 8.2 Concurrency Testing (`src/services/simulationService.js`)
+### 9.2 Dashboard Features
 
-We implemented a service to deterministically test transaction isolation levels.
-
-- **Case 1 (Read-Read)**: Two concurrent transactions read the same data. Used to verify shared locks (if any) or non-blocking reads.
-- **Case 2 (Read-Write)**: One transaction reads while another writes. Used to verify `REPEATABLE READ` vs `READ COMMITTED`.
-- **Case 3 (Write-Write)**: Two concurrent transactions update the same row. Used to verify locking behavior and wait timeouts.
-
-These tests run against the actual database but use `sleep()` to artificially extend transaction duration and force overlaps.
+- **Node Status Panels**: Real-time ONLINE/OFFLINE display
+- **Kill/Revive Buttons**: Simulate node failures
+- **Rider CRUD**: Add/Edit/Delete forms with auto-routing
+- **Concurrency Tests**: Run Case 1/2/3 with configurable isolation levels
+- **Global Recovery**: Manual trigger for full system sync
 
 ---
 
-## 9. ID Range Partitioning
+## 10. API Reference
+
+### Riders (CRUD)
+
+| Method | Endpoint        | Description                            |
+| ------ | --------------- | -------------------------------------- |
+| GET    | /api/riders     | Fetch all riders                       |
+| POST   | /api/riders     | Insert rider (tries Node 1 → fallback) |
+| PUT    | /api/riders/:id | Update rider                           |
+| DELETE | /api/riders/:id | Delete rider                           |
+
+### Recovery & Replication
+
+| Method | Endpoint                       | Description                                        |
+| ------ | ------------------------------ | -------------------------------------------------- |
+| POST   | /api/recovery                  | Full bidirectional sync (node1↔node2, node1↔node3) |
+| POST   | /api/replication/replicate     | Sync specific pair: `{source, target}`             |
+| GET    | /api/replication/pending/:node | List pending logs                                  |
+| GET    | /api/replication/failed/:node  | List failed logs                                   |
+| POST   | /api/replication/retry-failed  | Retry failed logs: `{source, target}`              |
+
+### Testing & Simulation
+
+| Method | Endpoint              | Description                                      |
+| ------ | --------------------- | ------------------------------------------------ |
+| GET    | /api/test/node-status | Get current node status                          |
+| POST   | /api/test/node-status | Toggle status: `{node, status}`                  |
+| POST   | /api/test/concurrency | Run test: `{caseId, isolationLevel, ...options}` |
 
 ---
 
-## 10. Summary of Guarantees
+## 11. Key Design Decisions
 
-### 8.1 Correctness Guarantees
+### Why Master-First with Try-Catch?
 
-- **No lost updates**: All writes are logged atomically
-- **Durability**: Logs ensure recoverability even after crashes
-- **Idempotent replication**: Safe to replay operations during recovery
-- **Eventual consistency**: All nodes converge after failover recovery
-- **Last-Write-Wins**: Timestamp-based conflict resolution
-- **Globally unique IDs**: Range partitioning prevents ID collisions
+- **Simplicity**: No separate health monitoring service needed
+- **Deterministic**: Connection errors directly trigger fallback
+- **Fast**: Immediate routing decision based on exception
 
-### 8.2 Availability Guarantees
+### Why Manual Replication?
 
-- **Master-slave with failover**: Node 1 failure triggers automatic promotion
-- **Partition-level availability**: JNT and non-JNT writes remain independent
-- **Automatic deadlock recovery**: 2 retries with exponential backoff
-- **Graceful degradation**: Partial write availability during Node 1 failure
+- **Explicit Control**: Admins/tests trigger sync exactly when needed
+- **Resource Efficiency**: No background polling consuming connections/CPU
+- **Debugging**: Easier to trace and test replication flow
 
-### 8.3 Performance Characteristics
+### Why Simulated Failures?
 
-- **Batch-based replication**: Efficient network utilization (100 logs/batch)
-- **Unidirectional replication**: Reduced overhead during normal operation
-- **REPEATABLE READ isolation**: Balanced consistency and concurrency
-- **Health monitoring**: 5-second intervals, minimal overhead
+- **Portability**: Works without infrastructure access (perfect for demos/exams)
+- **Deterministic**: Instant failure/recovery without timing issues
+- **Safe**: No risk of corrupting real database state
 
-### 8.4 Operational Guarantees
+---
 
-- **Transparent logging**: Application-level, no hidden triggers
-- **Observable failures**: Failed logs tracked in `ReplicationErrors`
-- **Manual intervention**: Admin endpoints for failover control
-- **Automatic recovery**: Node 1 catches up from slaves when returning
-- **Consistency verification**: Endpoint to verify data integrity across nodes
+## 12. Guarantees
+
+- **No Lost Updates**: ACID transactions ensure durability
+- **No Write Conflicts**: Partition rules prevent concurrent writes to same record
+- **Idempotent Replication**: Logs can be applied multiple times safely
+- **Automatic Deadlock Recovery**: Up to 3 retries with exponential backoff
+- **Eventually Consistent**: Manual sync restores consistency after failures
+
+---
+
+**Document Version**: 4.0 (Complete Rewrite)
+**Last Updated**: 2025-12-02
+**Authors**: STADVDB MCO2 Team
