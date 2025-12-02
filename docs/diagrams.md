@@ -386,24 +386,24 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    subgraph "Admin Control"
+    subgraph Admin_Control
         UI[Dashboard UI]
-        API[POST /api/test/node-status]
+        API[POST api test node status]
     end
 
-    subgraph "db.js - Connection Proxy"
-        Status[nodeStatus Object<br/>node1: true/false<br/>node2: true/false<br/>node3: true/false]
-        Intercept[Proxy intercepts<br/>pool.getConnection<br/>pool.query]
+    subgraph Connection_Proxy
+        Status[nodeStatus object node1 true or false node2 true or false node3 true or false]
+        Intercept[Proxy intercepts pool getConnection pool query]
     end
 
-    subgraph "Behavior"
-        Check{nodeStatus[node]<br/>== false?}
-        Throw[Throw Error:<br/>'Connection refused:<br/>nodeX is offline']
-        Success[Return actual<br/>connection/query]
+    subgraph Behavior
+        Check{Is node offline? nodeStatus for node equals false}
+        Throw[Throw error Connection refused node offline]
+        Success[Return actual connection or query]
     end
 
-    subgraph "Service Layer"
-        Catch[ridersService.js<br/>catches error]
+    subgraph Service_Layer
+        Catch[ridersService catches error]
         Fallback[Route to fragment]
     end
 
@@ -412,8 +412,8 @@ flowchart TD
     Status --> Intercept
     Intercept --> Check
 
-    Check -->|Yes - Simulated Offline| Throw
-    Check -->|No - Online| Success
+    Check -->|Yes Offline| Throw
+    Check -->|No Online| Success
 
     Throw --> Catch
     Catch --> Fallback
@@ -471,12 +471,12 @@ sequenceDiagram
 
 ### Diagram 5.1: Isolation Level Comparison
 
-| Isolation Level | Case 1<br/>(Read-Read) | Case 2<br/>(Read-Write) | Case 3<br/>(Write-Write) | Throughput | Consistency |
-|-----------------|-------------|---------------|----------------|------------|-------------|
-| **READ UNCOMMITTED** | [!] Dirty Read | [!] Phantom Read | [X] Lost Update | 850 TPS | [X] Poor |
-| **READ COMMITTED** | [OK] Clean Read | [!] Phantom Read | [!] Deadlock Risk | 720 TPS | [!] Medium |
-| **REPEATABLE READ** | [OK] Clean Read | [OK] No Phantom | [OK] Serialized | **650 TPS** | [OK] **Good** |
-| **SERIALIZABLE** | [OK] Clean Read | [OK] No Phantom | [OK] Serialized | 420 TPS | [OK] Excellent |
+| Isolation Level      | Case 1<br/>(Read-Read) | Case 2<br/>(Read-Write) | Case 3<br/>(Write-Write) | Throughput  | Consistency    |
+| -------------------- | ---------------------- | ----------------------- | ------------------------ | ----------- | -------------- |
+| **READ UNCOMMITTED** | [!] Dirty Read         | [!] Phantom Read        | [X] Lost Update          | 850 TPS     | [X] Poor       |
+| **READ COMMITTED**   | [OK] Clean Read        | [!] Phantom Read        | [!] Deadlock Risk        | 720 TPS     | [!] Medium     |
+| **REPEATABLE READ**  | [OK] Clean Read        | [OK] No Phantom         | [OK] Serialized          | **650 TPS** | [OK] **Good**  |
+| **SERIALIZABLE**     | [OK] Clean Read        | [OK] No Phantom         | [OK] Serialized          | 420 TPS     | [OK] Excellent |
 
 **Recommendation**: **REPEATABLE READ** - Best balance between consistency and performance.
 
@@ -484,11 +484,11 @@ sequenceDiagram
 
 ```mermaid
 graph LR
-    subgraph "Test Metrics (3 runs each)"
-        T1[Case 1: Fragment → Central Failure<br/>[OK] 3/3 writes stored in fragment<br/>[OK] 3/3 marked as pending]
-        T2[Case 2: Central Node Recovery<br/>[OK] Avg recovery time: 3.2s<br/>[OK] 0 data loss<br/>[OK] 100% consistency]
-        T3[Case 3: Central → Fragment Failure<br/>[OK] 3/3 writes stored in central<br/>[OK] 3/3 marked as failed]
-        T4[Case 4: Fragment Recovery<br/>[OK] Avg recovery time: 1.8s<br/>[OK] 100% partition filter accuracy]
+    subgraph Test_Metrics_3_Runs_Each
+        T1[Case 1: Fragment to Central Failure\nOK: 3 of 3 writes stored in fragment\nOK: 3 of 3 marked as pending]
+        T2[Case 2: Central Node Recovery\nOK: Avg recovery time 3.2s\nOK: Zero data loss\nOK: 100 percent consistency]
+        T3[Case 3: Central to Fragment Failure\nOK: 3 of 3 writes stored in central\nOK: 3 of 3 marked as failed]
+        T4[Case 4: Fragment Recovery\nOK: Avg recovery time 1.8s\nOK: 100 percent partition filter accuracy]
     end
 
     style T1 fill:#9f9
