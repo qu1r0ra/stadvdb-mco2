@@ -2,79 +2,114 @@ import { nodes } from "../config/db.js";
 import { runTransaction } from "../utils/transactions.js";
 import sleep from "../utils/sleep.js";
 
-// CASE 1: Concurrent Reads (Node 1)
-export async function testConcurrentReads(isoLevel) {
+// Helper to reset data before test
+async function seedTestRider(pool, options) {
+    const { id, firstName, lastName, courier, vehicle } = options;
+    const sql = `INSERT INTO Riders (id, firstName, lastName, courierName, vehicleType, age) 
+                 VALUES (?, 'Original', ?, ?, ?, 25) 
+                 ON DUPLICATE KEY UPDATE firstName = 'Original', age = 25`;
+    await pool.query(sql, [id, lastName, courier, vehicle]);
+}
+
+// === TEST 1: READ - READ ===
+// (Technically Dirty Read check: Can T2 read what T1 is writing?)
+export async function testConcurrentReads(isoLevel, options) {
     const pool = nodes.node1.pool;
-    const log = [];
+    const report = [];
+    const targetId = options.id;
+    const newName = options.firstName;
+
+    await seedTestRider(pool, options);
 
     const t1 = runTransaction(pool, async (conn) => {
-        log.push("T1 Start Read");
-        await conn.query("SELECT * FROM Riders LIMIT 1");
-        await sleep(2000); // Hold lock
-        log.push("T1 End Read");
-        return "T1 Done";
-    }, isoLevel);
+        report.push(`[T1] Updating ID ${targetId} to '${newName}' (Uncommitted)...`);
+        await conn.query("UPDATE Riders SET firstName = ? WHERE id = ?", [newName, targetId]);
+        await sleep(3000);
+        report.push(`[T1] Committing change.`);
+    }, "READ COMMITTED");
 
     const t2 = runTransaction(pool, async (conn) => {
-        await sleep(500); // Start slightly after T1
-        log.push("T2 Start Read");
-        await conn.query("SELECT * FROM Riders LIMIT 1");
-        log.push("T2 End Read");
-        return "T2 Done";
+        await sleep(1000);
+        const [rows] = await conn.query("SELECT firstName FROM Riders WHERE id = ?", [targetId]);
+        const val = rows[0]?.firstName;
+
+        if (val === newName) {
+            report.push(`[RESULT] DIRTY READ: Saw uncommitted data '${val}'`);
+        } else {
+            report.push(`[RESULT] CLEAN READ: Saw committed data '${val}'`);
+        }
     }, isoLevel);
 
     await Promise.allSettled([t1, t2]);
-    return log;
+    return report;
 }
 
-// CASE 2: Concurrent Read (T1) and Write (T2)
-export async function testReadWrite(isoLevel) {
+// === TEST 2: READ - WRITE ===
+// (Phantom Read check: T1 Reads, T2 Writes, T1 Reads again)
+export async function testReadWrite(isoLevel, options) {
     const pool = nodes.node1.pool;
-    const log = [];
-
-    // T1: Reads, sleeps, reads again (to check for phantom/unrepeatable)
-    const t1 = runTransaction(pool, async (conn) => {
-        log.push("T1: Read 1");
-        const [rows1] = await conn.query("SELECT count(*) as c FROM Riders");
-
-        await sleep(2000);
-
-        log.push("T1: Read 2");
-        const [rows2] = await conn.query("SELECT count(*) as c FROM Riders");
-        return { before: rows1[0].c, after: rows2[0].c };
-    }, isoLevel);
-
-    // T2: Inserts a rider
-    const t2 = runTransaction(pool, async (conn) => {
-        await sleep(500);
-        log.push("T2: Insert Start");
-        await conn.query("INSERT INTO Riders (firstName, courierName) VALUES ('Test', 'JNT')");
-        log.push("T2: Insert End");
-    }, isoLevel);
-
-    const results = await Promise.allSettled([t1, t2]);
-    return { log, results };
-}
-
-// CASE 3: Concurrent Writes (same ID)
-export async function testWriteWrite(isoLevel, idToUpdate) {
-    const pool = nodes.node1.pool;
-    const log = [];
+    const report = [];
 
     const t1 = runTransaction(pool, async (conn) => {
-        log.push("T1: Update Start");
-        await conn.query("UPDATE Riders SET age = 99 WHERE id = ?", [idToUpdate]);
-        await sleep(2000); // Hold lock
-        log.push("T1: Update End");
+        const [r1] = await conn.query("SELECT count(*) as c FROM Riders");
+        report.push(`[T1] Initial Count: ${r1[0].c}`);
+        await sleep(3000);
+        const [r2] = await conn.query("SELECT count(*) as c FROM Riders");
+
+        if (r1[0].c !== r2[0].c) {
+            report.push(`[RESULT] PHANTOM: Count changed (${r1[0].c} -> ${r2[0].c})`);
+        } else {
+            report.push(`[RESULT] CONSISTENT: Count stayed ${r1[0].c}`);
+        }
     }, isoLevel);
 
     const t2 = runTransaction(pool, async (conn) => {
         await sleep(500);
-        log.push("T2: Update Start (waiting...)");
-        await conn.query("UPDATE Riders SET age = 100 WHERE id = ?", [idToUpdate]);
-        log.push("T2: Update End");
+        report.push(`[T2] Inserting new rider...`);
+        const start = Date.now();
+        await conn.query("INSERT INTO Riders (firstName, lastName, courierName, vehicleType, age) VALUES (?, ?, ?, ?, 99)",
+            [options.firstName + " (Phantom)", options.lastName, options.courier, options.vehicle]);
+
+        if (Date.now() - start > 1500) {
+            report.push(`[RESULT] T2 BLOCKED by T1 Lock`);
+        }
+    }, "READ COMMITTED");
+
+    await Promise.allSettled([t1, t2]);
+    return report;
+}
+
+// === TEST 3: WRITE - WRITE ===
+// (Locking check: T1 Updates, T2 tries to Update same row)
+export async function testWriteWrite(isoLevel, options) {
+    const pool = nodes.node1.pool;
+    const report = [];
+    const targetId = options.id;
+
+    await seedTestRider(pool, options);
+
+    const t1 = runTransaction(pool, async (conn) => {
+        report.push(`[T1] Updating ID ${targetId}... (Holding Lock)`);
+        await conn.query("UPDATE Riders SET age = 88 WHERE id = ?", [targetId]);
+        await sleep(3000);
+        report.push(`[T1] Committing.`);
+    }, isoLevel);
+
+    const t2 = runTransaction(pool, async (conn) => {
+        await sleep(500);
+        const start = Date.now();
+        try {
+            report.push(`[T2] Attempting update on ID ${targetId}...`);
+            await conn.query("UPDATE Riders SET age = 99 WHERE id = ?", [targetId]);
+
+            if (Date.now() - start > 2000) {
+                report.push(`[RESULT] LOCKED: T2 waited for T1.`);
+            } else {
+                report.push(`[RESULT] NO LOCK: T2 overwrote immediately.`);
+            }
+        } catch (e) { report.push(`[T2] Error: ${e.message}`); }
     }, isoLevel);
 
     await Promise.allSettled([t1, t2]);
-    return log;
+    return report;
 }

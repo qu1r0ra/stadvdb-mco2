@@ -32,21 +32,32 @@
         </div>
 
         <h3>Step 3: Concurrency Simulation</h3>
-        <div class="test-controls">
-            <label>Isolation Level:</label>
-            <select id="isoLevel">
+
+        <div
+            style="background: #f8f9fa; padding: 15px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 15px;">
+            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                <input type="number" id="sim_id" placeholder="ID (e.g. 1)" style="width: 80px; padding: 5px;">
+                <input type="text" id="sim_name" placeholder="Name (e.g. TEST)" style="flex-grow: 1; padding: 5px;">
+            </div>
+
+            <label style="font-weight: bold;">Isolation Level:</label>
+            <select id="isoLevel" style="width: 100%; padding: 5px; margin-bottom: 10px;">
                 <option value="READ UNCOMMITTED">Read Uncommitted</option>
                 <option value="READ COMMITTED">Read Committed</option>
-                <option value="REPEATABLE READ" selected>Repeatable Read</option>
+                <option value="REPEATABLE READ" selected>Repeatable Read (Default)</option>
                 <option value="SERIALIZABLE">Serializable</option>
             </select>
-            <button class="btn-edit" onclick="runTest(1)">Test Case 1 (Concurrent Reads)</button>
-            <button class="btn-edit" onclick="runTest(2)">Test Case 2 (Read + Write)</button>
-            <button class="btn-edit" onclick="runTest(3)">Test Case 3 (Write + Write)</button>
+
+            <div style="display: flex; gap: 5px;">
+                <button class="btn-edit" style="flex: 1;" onclick="runTest(1)">Read - Read</button>
+                <button class="btn-edit" style="flex: 1;" onclick="runTest(2)">Read - Write</button>
+                <button class="btn-edit" style="flex: 1;" onclick="runTest(3)">Write - Write</button>
+            </div>
         </div>
 
-        <div class="console-log" id="sim-console">
-            > System Ready. Select a test or toggle nodes above...
+        <div class="console-log" id="sim-console"
+            style="height: 150px; overflow-y: auto; background: #222; color: #fff; padding: 10px; font-family: monospace;">
+            > Ready. Select a test above.
         </div>
     </div>
 
@@ -62,7 +73,6 @@
                 <option value="Bicycle">Bicycle</option>
                 <option value="Van">Van</option>
             </select>
-
             <select id="r_courier">
                 <option value="" disabled selected>Select Courier (Partition)</option>
                 <option value="JNT">JNT</option>
@@ -79,7 +89,6 @@
             <button class="btn-update" id="btn-update" onclick="submitUpdate()">✓ Save Changes</button>
             <button class="btn-cancel" id="btn-cancel" onclick="resetForm()">Cancel</button>
         </div>
-
 
         <hr style="margin: 20px 0; border-top: 1px solid #eee;">
 
@@ -199,11 +208,18 @@
     </div>
 
     <script>
-        const setStatus = (msg) => document.getElementById('status-msg').innerText = msg;
-        const logConsole = (msg) => {
+        const setStatus = (msg) => {
+            const el = document.getElementById('status-msg');
+            if (el) el.innerText = msg;
+        };
+
+        // Helper to append to the div instead of console.log
+        function logConsole(htmlMsg) {
             const c = document.getElementById('sim-console');
-            c.innerHTML += `<div>${msg}</div>`;
-            c.scrollTop = c.scrollHeight;
+            if (c) {
+                c.innerHTML += `<div>${htmlMsg}</div>`;
+                c.scrollTop = c.scrollHeight;
+            }
         }
 
         // --- SIMULATION FUNCTIONS ---
@@ -238,35 +254,54 @@
             }
         }
 
+        // UPDATED RUNTEST FUNCTION (With detailed logs)
         async function runTest(caseId) {
             const iso = document.getElementById('isoLevel').value;
-            const rid = document.getElementById('r_id').value || 1; // Default ID for write tests
+            const simId = document.getElementById('sim_id').value;
+            const simName = document.getElementById('sim_name').value;
 
-            logConsole(`> Running Case ${caseId} (${iso})...`);
+            if (!simId) return alert("Please enter an ID!");
+
+            // Map ID to Label
+            let label = "";
+            if (caseId === 1) label = "READ - READ";
+            if (caseId === 2) label = "READ - WRITE";
+            if (caseId === 3) label = "WRITE - WRITE";
+
+            const consoleBox = document.getElementById('sim-console');
+            consoleBox.innerHTML = `> Starting ${label} Test...<br>`;
+
+            const payload = {
+                caseId, isolationLevel: iso, id: simId, firstName: simName || 'SimUser',
+                lastName: 'Test', courier: 'JNT', vehicle: 'Motorcycle'
+            };
 
             try {
                 const res = await fetch('/api/test/concurrency', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ caseId, isolationLevel: iso, param: rid })
+                    body: JSON.stringify(payload)
                 });
                 const data = await res.json();
 
-                if (data.success) {
-                    logConsole(`> Result: Success`);
-                    if (data.result.log) {
-                        data.result.log.forEach(l => logConsole(`  - ${l}`));
-                    } else if (Array.isArray(data.result)) {
-                        data.result.forEach(l => logConsole(`  - ${l}`));
-                    }
-                } else {
-                    logConsole(`> Failed: ${data.error}`);
+                if (data.success && data.result) {
+                    data.result.forEach(line => {
+                        let style = "color: #eee;";
+                        // SIMPLE COLORS
+                        if (line.includes("T1")) style = "color: #4da6ff;"; // Blue
+                        if (line.includes("T2")) style = "color: #ff6b6b;"; // Red
+                        if (line.includes("RESULT")) style = "color: #00ff00; font-weight: bold;"; // Green
+
+                        // Clean up the log visual
+                        logConsole(`<span style="${style}">${line}</span>`);
+                    });
+                    // Refresh table to prove it's real
+                    setTimeout(() => window.location.reload(), 3000);
                 }
             } catch (e) {
                 logConsole(`> Error: ${e.message}`);
             }
         }
-
         // --- CRUD FUNCTIONS ---
 
         async function createRider() {
