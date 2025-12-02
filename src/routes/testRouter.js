@@ -6,7 +6,7 @@ const router = Router();
 
 // Toggle Node Status (Kill/Revive)
 router.post("/node-status", (req, res) => {
-    const { node, status } = req.body; // e.g., { node: "node1", status: false }
+    const { node, status } = req.body;
     if (node in nodeStatus) {
         nodeStatus[node] = status;
         console.log(`[SIMULATION] ${node} is now ${status ? "ONLINE" : "OFFLINE"}`);
@@ -23,16 +23,19 @@ router.get("/node-status", (req, res) => {
 
 // Run Concurrency Test
 router.post("/concurrency", async (req, res) => {
-    const { caseId, isolationLevel, param } = req.body;
+    // We grab the whole body as 'options' to pass ID, name, etc.
+    const { caseId, isolationLevel, ...options } = req.body;
 
     try {
         let result;
-        if (caseId === 1) result = await testConcurrentReads(isolationLevel);
-        if (caseId === 2) result = await testReadWrite(isolationLevel);
-        if (caseId === 3) result = await testWriteWrite(isolationLevel, param || 1);
+        // PASS 'options' AS THE SECOND ARGUMENT
+        if (caseId === 1) result = await testConcurrentReads(isolationLevel, options);
+        if (caseId === 2) result = await testReadWrite(isolationLevel, options);
+        if (caseId === 3) result = await testWriteWrite(isolationLevel, options);
 
         res.json({ success: true, result });
     } catch (err) {
+        console.error("Test Error:", err);
         res.status(500).json({ error: err.message });
     }
 });

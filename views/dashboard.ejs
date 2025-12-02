@@ -5,6 +5,56 @@
     <meta charset="UTF-8">
     <title>MCO2: Distributed Transaction Manager</title>
     <link rel="stylesheet" href="/style.css">
+    <style>
+        /* Extra styles for the new report table */
+        .report-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .report-table th,
+        .report-table td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .report-table th {
+            background-color: #333;
+            color: #fff;
+            position: sticky;
+            top: 0;
+        }
+
+        /* Actor Colors */
+        .row-t1 {
+            background-color: #e3f2fd;
+        }
+
+        /* Light Blue */
+        .row-t2 {
+            background-color: #ffebee;
+        }
+
+        /* Light Red */
+        .row-sys {
+            background-color: #f5f5f5;
+        }
+
+        /* Grey */
+        .row-res {
+            background-color: #e8f5e9;
+            font-weight: bold;
+        }
+
+        /* Green (Analysis) */
+        .row-err {
+            background-color: #ffe0e0;
+            color: #d32f2f;
+        }
+    </style>
 </head>
 
 <body>
@@ -36,28 +86,54 @@
         <div
             style="background: #f8f9fa; padding: 15px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 15px;">
             <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                <input type="number" id="sim_id" placeholder="ID (e.g. 1)" style="width: 80px; padding: 5px;">
-                <input type="text" id="sim_name" placeholder="Name (e.g. TEST)" style="flex-grow: 1; padding: 5px;">
+                <div style="flex: 1;">
+                    <label style="font-size: 0.8em; color: #666; font-weight: bold;">Target Rider ID (Row to
+                        lock/read)</label>
+                    <input type="number" id="sim_id" placeholder="e.g. 1" style="width: 100%; padding: 5px;">
+                </div>
+                <div style="flex: 2;">
+                    <label style="font-size: 0.8em; color: #666; font-weight: bold;">Test Value (Data to Write)</label>
+                    <input type="text" id="sim_name" placeholder="e.g. DIRTY_DATA" style="width: 100%; padding: 5px;">
+                </div>
             </div>
 
             <label style="font-weight: bold;">Isolation Level:</label>
             <select id="isoLevel" style="width: 100%; padding: 5px; margin-bottom: 10px;">
-                <option value="READ UNCOMMITTED">Read Uncommitted</option>
+                <option value="READ UNCOMMITTED">Read Uncommitted (Lowest)</option>
                 <option value="READ COMMITTED">Read Committed</option>
                 <option value="REPEATABLE READ" selected>Repeatable Read (Default)</option>
-                <option value="SERIALIZABLE">Serializable</option>
+                <option value="SERIALIZABLE">Serializable (Highest)</option>
             </select>
 
             <div style="display: flex; gap: 5px;">
-                <button class="btn-edit" style="flex: 1;" onclick="runTest(1)">Read - Read</button>
-                <button class="btn-edit" style="flex: 1;" onclick="runTest(2)">Read - Write</button>
-                <button class="btn-edit" style="flex: 1;" onclick="runTest(3)">Write - Write</button>
+                <button class="btn-edit" style="flex: 1;" onclick="runTest(1)">Test 1: Read - Read (Dirty
+                    Check)</button>
+                <button class="btn-edit" style="flex: 1;" onclick="runTest(2)">Test 2: Read - Write (Phantom
+                    Check)</button>
+                <button class="btn-edit" style="flex: 1;" onclick="runTest(3)">Test 3: Write - Write (Lock
+                    Check)</button>
             </div>
         </div>
 
-        <div class="console-log" id="sim-console"
-            style="height: 150px; overflow-y: auto; background: #222; color: #fff; padding: 10px; font-family: monospace;">
-            > Ready. Select a test above.
+        <div id="sim-results"
+            style="height: 300px; overflow-y: auto; background: #fff; border: 1px solid #ccc; border-radius: 4px;">
+            <table class="report-table">
+                <thead>
+                    <tr>
+                        <th style="width: 80px;">Time</th>
+                        <th style="width: 80px;">Actor</th>
+                        <th style="width: 120px;">Action</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody id="sim-table-body">
+                    <tr>
+                        <td colspan="4" style="text-align: center; color: #999; padding: 20px;">
+                            > Ready. Select a test above to view the timeline.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
@@ -127,7 +203,8 @@
                                             <%= r.lastName %>
                                     </strong><br>
                                     <small>
-                                        <%= r.courierName %> | <%= r.vehicleType %>
+                                        <%= r.courierName %> |
+                                            <%= r.vehicleType %>
                                     </small>
                                 </td>
                                 <td>
@@ -213,16 +290,7 @@
             if (el) el.innerText = msg;
         };
 
-        // Helper to append to the div instead of console.log
-        function logConsole(htmlMsg) {
-            const c = document.getElementById('sim-console');
-            if (c) {
-                c.innerHTML += `<div>${htmlMsg}</div>`;
-                c.scrollTop = c.scrollHeight;
-            }
-        }
-
-        // --- SIMULATION FUNCTIONS ---
+        // --- SIMULATION FUNCTIONS (UPDATED FOR TABLE) ---
 
         async function toggleNode(node, status) {
             try {
@@ -233,7 +301,7 @@
                 });
                 const data = await res.json();
                 updateNodeUI(data.nodeStatus);
-            } catch (e) { logConsole("[Error] " + e.message); }
+            } catch (e) { console.error(e); }
         }
 
         async function fetchNodeStatus() {
@@ -254,26 +322,26 @@
             }
         }
 
-        // UPDATED RUNTEST FUNCTION (With detailed logs)
+        // NEW: Render results in the table
         async function runTest(caseId) {
             const iso = document.getElementById('isoLevel').value;
             const simId = document.getElementById('sim_id').value;
             const simName = document.getElementById('sim_name').value;
+            const tbody = document.getElementById('sim-table-body');
 
-            if (!simId) return alert("Please enter an ID!");
+            if (!simId) return alert("Please enter a Target Rider ID!");
 
-            // Map ID to Label
-            let label = "";
-            if (caseId === 1) label = "READ - READ";
-            if (caseId === 2) label = "READ - WRITE";
-            if (caseId === 3) label = "WRITE - WRITE";
+            tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 20px;">Running Simulation (Please wait 3-5 seconds)...</td></tr>`;
 
-            const consoleBox = document.getElementById('sim-console');
-            consoleBox.innerHTML = `> Starting ${label} Test...<br>`;
-
+            // Prepare Payload
             const payload = {
-                caseId, isolationLevel: iso, id: simId, firstName: simName || 'SimUser',
-                lastName: 'Test', courier: 'JNT', vehicle: 'Motorcycle'
+                caseId,
+                isolationLevel: iso,
+                id: simId,
+                firstName: simName || 'TEST_DATA',
+                lastName: 'Test',
+                courier: 'JNT',
+                vehicle: 'Motorcycle'
             };
 
             try {
@@ -285,23 +353,32 @@
                 const data = await res.json();
 
                 if (data.success && data.result) {
-                    data.result.forEach(line => {
-                        let style = "color: #eee;";
-                        // SIMPLE COLORS
-                        if (line.includes("T1")) style = "color: #4da6ff;"; // Blue
-                        if (line.includes("T2")) style = "color: #ff6b6b;"; // Red
-                        if (line.includes("RESULT")) style = "color: #00ff00; font-weight: bold;"; // Green
+                    tbody.innerHTML = ""; // Clear loader
 
-                        // Clean up the log visual
-                        logConsole(`<span style="${style}">${line}</span>`);
+                    data.result.forEach(row => {
+                        const tr = document.createElement('tr');
+
+                        // Apply CSS classes based on Actor/Result
+                        if (row.actor === "T1") tr.className = "row-t1";
+                        else if (row.actor === "T2") tr.className = "row-t2";
+                        else if (row.actor === "ANALYSIS") tr.className = "row-res";
+                        else if (row.actor === "System") tr.className = "row-sys";
+                        else if (row.actor === "ERROR") tr.className = "row-err";
+
+                        tr.innerHTML = `
+                            <td>${row.time}</td>
+                            <td><strong>${row.actor}</strong></td>
+                            <td>${row.action}</td>
+                            <td>${row.details}</td>
+                        `;
+                        tbody.appendChild(tr);
                     });
-                    // Refresh table to prove it's real
-                    setTimeout(() => window.location.reload(), 3000);
                 }
             } catch (e) {
-                logConsole(`> Error: ${e.message}`);
+                tbody.innerHTML = `<tr><td colspan="4" class="row-err" style="text-align:center;">Error: ${e.message}</td></tr>`;
             }
         }
+
         // --- CRUD FUNCTIONS ---
 
         async function createRider() {
